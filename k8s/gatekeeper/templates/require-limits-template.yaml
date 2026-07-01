@@ -1,0 +1,50 @@
+# =============================================================================
+# ConstraintTemplate: K8sRequireLimits
+# =============================================================================
+#
+# Enforces that every container declares resource limits (CPU and memory).
+# Without limits, a single rogue container can exhaust all node resources,
+# causing cascading failures across unrelated workloads.
+#
+# This also prevents the resource-exhaustion attack vector where an agent
+# deploys a workload with unrestricted CPU/memory consumption.
+#
+# Applied by: k8s/gatekeeper/constraints/require-limits.yaml
+# =============================================================================
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequirelimits
+  annotations:
+    description: >
+      Requires all containers to declare CPU and memory resource limits.
+      Part of the AI Agent Kubernetes Security Gateway defence-in-depth stack.
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequireLimits
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequirelimits
+
+        # Block containers without a memory limit.
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not container.resources.limits.memory
+          msg := sprintf(
+            "container '%v' must declare resources.limits.memory to prevent resource exhaustion",
+            [container.name]
+          )
+        }
+
+        # Block containers without a CPU limit.
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not container.resources.limits.cpu
+          msg := sprintf(
+            "container '%v' must declare resources.limits.cpu to prevent resource exhaustion",
+            [container.name]
+          )
+        }

@@ -1,0 +1,68 @@
+# =============================================================================
+# ConstraintTemplate: K8sAllowedRepos
+# =============================================================================
+#
+# Enforces that all container images come from a pre-approved list of
+# registry prefixes.  This prevents agents (or direct kubectl users) from
+# deploying images from untrusted sources — cryptominers, reverse shells,
+# supply-chain attack payloads, etc.
+#
+# The allowed repo list is configured in the Constraint, not here, so it can
+# be changed cluster-wide without touching the template.
+#
+# Applied by: k8s/gatekeeper/constraints/allowed-repos.yaml
+# =============================================================================
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sallowedrepos
+  annotations:
+    description: >
+      Requires all container images to come from an approved registry.
+      Part of the AI Agent Kubernetes Security Gateway defence-in-depth stack.
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sAllowedRepos
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            repos:
+              description: >
+                List of allowed image prefixes.
+                An image is permitted if it starts with any entry in this list.
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sallowedrepos
+
+        # Helper: true if the image starts with any allowed prefix.
+        trusted_image(image) {
+          prefix := input.parameters.repos[_]
+          startswith(image, prefix)
+        }
+
+        # Check regular containers.
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not trusted_image(container.image)
+          msg := sprintf(
+            "container '%v' uses image '%v' which is not from an approved registry. Allowed prefixes: %v",
+            [container.name, container.image, input.parameters.repos]
+          )
+        }
+
+        # Check init containers.
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.initContainers[_]
+          not trusted_image(container.image)
+          msg := sprintf(
+            "initContainer '%v' uses image '%v' which is not from an approved registry. Allowed prefixes: %v",
+            [container.name, container.image, input.parameters.repos]
+          )
+        }

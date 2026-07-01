@@ -1,0 +1,32 @@
+# =============================================================================
+# Constraint: require-resource-limits
+# =============================================================================
+# Activates the K8sRequireLimits policy on all Pods in user namespaces.
+#
+# Without CPU and memory limits, a single rogue workload can starve the
+# entire node.  This constraint ensures every container declares limits,
+# which is also required for Kubernetes VPA/HPA to work correctly.
+# =============================================================================
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequireLimits
+metadata:
+  name: require-resource-limits
+  annotations:
+    description: >
+      Requires CPU and memory limits on all containers to prevent resource
+      exhaustion attacks.  Applied as part of the AI Agent K8s Security Gateway.
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - kube-system
+            - kube-public
+            - kube-node-lease
+            - gatekeeper-system

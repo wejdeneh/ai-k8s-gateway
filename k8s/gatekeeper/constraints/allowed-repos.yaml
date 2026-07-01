@@ -1,0 +1,52 @@
+# =============================================================================
+# Constraint: repo-is-from-trusted-registry
+# =============================================================================
+# Activates the K8sAllowedRepos policy on all Pods in user namespaces.
+#
+# The `repos` list defines allowed image prefixes — sync this with:
+#   - settings.trusted_image_prefixes in app/config.py
+#   - trusted_image_prefixes in policies/agent_actions.rego
+#
+# This creates three independent enforcement points for the same policy:
+#   1. Gateway risk scorer      (adds risk score for untrusted images)
+#   2. OPA gateway policy       (denies at gateway level)
+#   3. Gatekeeper (this file)   (denies at API server level — bypass-proof)
+# =============================================================================
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sAllowedRepos
+metadata:
+  name: repo-is-from-trusted-registry
+  annotations:
+    description: >
+      Requires all container images to be from an approved registry.
+      Applied as part of the AI Agent K8s Security Gateway defence-in-depth stack.
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - kube-system
+            - kube-public
+            - kube-node-lease
+            - gatekeeper-system
+  parameters:
+    repos:
+      # Docker Hub official images
+      - "nginx"
+      - "python"
+      - "alpine"
+      - "busybox"
+      # Google Container Registry
+      - "gcr.io/"
+      # Red Hat Quay
+      - "quay.io/"
+      # Kubernetes official images
+      - "registry.k8s.io/"
+      # ── Add your private registry below ──────────────────────────────
+      # - "my-company.registry.io/"

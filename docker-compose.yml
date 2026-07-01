@@ -1,0 +1,98 @@
+# =============================================================================
+# AI Agent Kubernetes Security Gateway — docker-compose.yml
+# =============================================================================
+#
+# Services:
+#   opa     — Open Policy Agent sidecar serving policies from ./policies/
+#   gateway — FastAPI enforcement gateway that calls OPA for every decision
+#
+# Usage:
+#   docker-compose up            # start both services (foreground)
+#   docker-compose up -d         # start detached
+#   docker-compose logs -f       # tail logs
+#   docker-compose down          # stop and remove containers
+#
+# Kind cluster + docker-compose networking note:
+#   When running on Linux, the kind API server is directly reachable from
+#   Docker containers via the host's network (host.docker.internal or the
+#   cluster's internal IP).
+#
+#   On Docker Desktop (macOS / Windows), kind runs inside Docker's VM.
+#   The gateway container needs the kubeconfig server URL patched to use
+#   "host.docker.internal" instead of "127.0.0.1":
+#
+#     kind get kubeconfig --name agent-gw-demo \
+#       | sed 's/127.0.0.1/host.docker.internal/g' \
+#       > /tmp/kind-patched.kubeconfig
+#     KUBECONFIG=/tmp/kind-patched.kubeconfig docker-compose up
+#
+#   demo/setup.sh prints this command automatically on macOS/Windows.
+#
+# For local development without docker-compose:
+#   docker run -p 8181:8181 openpolicyagent/opa:latest run --server \
+#              --addr=0.0.0.0:8181 --log-level=info /policies \
+#              -v $(pwd)/policies:/policies:ro
+#   uvicorn app.main:app --port 8000 --reload
+# =============================================================================
+
+services:
+
+  # ── OPA sidecar ────────────────────────────────────────────────────────────
+  opa:
+    image: openpolicyagent/opa:latest
+    container_name: ai-k8s-opa
+    ports:
+      - "8181:8181"
+    volumes:
+      - ./policies:/policies:ro          # policy files are read-only in OPA
+    command:
+      - "run"
+      - "--server"
+      - "--addr=0.0.0.0:8181"
+      - "--log-level=info"
+      - "--log-format=json"
+      - "/policies"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8181/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  # ── FastAPI Gateway ────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-k8s-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      # JWT — override JWT_SECRET with `openssl rand -hex 32` in production.
+      JWT_SECRET: "${JWT_SECRET:-dev-secret-change-in-production}"
+      JWT_ALGORITHM: "HS256"
+      JWT_TTL_MINUTES: "15"
+      # OPA — use the docker-compose service name as hostname.
+      OPA_URL: "http://opa:8181"
+      OPA_POLICY_PATH: "v1/data/agent/authz"
+      # Audit log inside the container (bind-mounted to host ./logs/).
+      AUDIT_LOG_PATH: "/app/logs/audit.log"
+      K8S_IN_CLUSTER: "false"
+    volumes:
+      # Audit logs are persisted on the host so you can read them after
+      # the container stops.
+      - ./logs:/app/logs
+      # Kubeconfig — gives the gateway access to the kind cluster.
+      # On macOS/Windows Docker Desktop, patch the server URL first
+      # (see the note at the top of this file).
+      - ${KUBECONFIG:-~/.kube/config}:/root/.kube/config:ro
+    depends_on:
+      opa:
+        condition: service_healthy
+    restart: on-failure:3
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

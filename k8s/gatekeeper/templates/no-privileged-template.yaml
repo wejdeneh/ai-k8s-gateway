@@ -1,0 +1,70 @@
+# =============================================================================
+# ConstraintTemplate: K8sNoPrivilegedContainer
+# =============================================================================
+#
+# Enforces at the Kubernetes API server level that no pod may use:
+#   - privileged containers (securityContext.privileged=true)
+#   - hostNetwork access   (spec.hostNetwork=true)
+#   - hostPID access       (spec.hostPID=true)
+#   - hostIPC access       (spec.hostIPC=true)
+#
+# This is the Kubernetes-native companion to the OPA gateway policy.
+# It activates even when the AI agent gateway is bypassed entirely.
+#
+# Applied by: k8s/gatekeeper/constraints/no-privileged.yaml
+# =============================================================================
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8snoprivilegedcontainer
+  annotations:
+    description: >
+      Prevents privileged containers and host-level namespace sharing.
+      Part of the AI Agent Kubernetes Security Gateway defence-in-depth stack.
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sNoPrivilegedContainer
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8snoprivilegedcontainer
+
+        # Block privileged containers
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          container.securityContext.privileged == true
+          msg := sprintf(
+            "container '%v' has securityContext.privileged=true — this grants full host access and is forbidden",
+            [container.name]
+          )
+        }
+
+        # Block init containers that are privileged
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.initContainers[_]
+          container.securityContext.privileged == true
+          msg := sprintf(
+            "initContainer '%v' has securityContext.privileged=true — forbidden",
+            [container.name]
+          )
+        }
+
+        # Block hostNetwork
+        violation[{"msg": msg}] {
+          input.review.object.spec.hostNetwork == true
+          msg := "spec.hostNetwork=true is not permitted — containers must not share the host network namespace"
+        }
+
+        # Block hostPID
+        violation[{"msg": msg}] {
+          input.review.object.spec.hostPID == true
+          msg := "spec.hostPID=true is not permitted — containers must not share the host PID namespace"
+        }
+
+        # Block hostIPC
+        violation[{"msg": msg}] {
+          input.review.object.spec.hostIPC == true
+          msg := "spec.hostIPC=true is not permitted — containers must not share the host IPC namespace"
+        }

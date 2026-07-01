@@ -1,0 +1,208 @@
+# =============================================================================
+# Falco Custom Rules — AI Agent Kubernetes Security Gateway
+# =============================================================================
+#
+# These rules add runtime threat detection as the final layer of the
+# defence-in-depth stack:
+#
+#   AI Agent → Gateway (JWT+OPA) → Gatekeeper (admission) → Runtime (Falco)
+#                                                                    ↑
+#                                              Catches what slips past
+#                                              static policy at runtime
+#
+# Falco watches kernel syscalls from running containers and fires alerts
+# when suspicious behaviour is detected — even for containers that were
+# legitimately admitted by OPA and Gatekeeper.
+#
+# Load these rules by mounting this file into the Falco container:
+#   falco -r /etc/falco/falco_rules.yaml \
+#         -r /etc/falco/ai-gateway-rules.yaml
+#
+# Or via Helm:
+#   helm install falco falcosecurity/falco \
+#     --set-file customRules."ai-gateway-rules\.yaml"=k8s/falco/rules.yaml
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Macros — reusable building blocks for the rules below
+# ---------------------------------------------------------------------------
+
+# Known shell binaries — process names that indicate interactive shell access.
+- macro: shell_in_container
+  condition: >
+    spawned_process and container
+    and proc.name in (bash, sh, zsh, fish, ksh, tcsh, dash)
+    and not proc.pname in (runc, containerd-shim)
+
+# Processes whose parent is a web server / app — a shell spawned here is
+# almost certainly a web shell or RCE exploit.
+- macro: shell_from_web_process
+  condition: >
+    shell_in_container
+    and proc.pname in (nginx, apache2, httpd, gunicorn, uvicorn, node, python3, python)
+
+# Sensitive host files that containers should never access.
+- macro: sensitive_host_file_read
+  condition: >
+    open_read and container
+    and fd.name in (
+      /etc/shadow,
+      /etc/sudoers,
+      /root/.ssh/authorized_keys,
+      /root/.ssh/id_rsa,
+      /etc/kubernetes/admin.conf,
+      /var/run/secrets/kubernetes.io/serviceaccount/token
+    )
+
+# ---------------------------------------------------------------------------
+# CRITICAL — Active Compromise
+# ---------------------------------------------------------------------------
+
+- rule: Shell Spawned in Container
+  desc: >
+    A shell process was spawned inside a container.  This is a strong indicator
+    of an active intrusion — either via a web shell, RCE exploit, or a
+    compromised container image with an embedded backdoor.
+  condition: shell_in_container
+  output: >
+    Shell spawned in container
+    (user=%user.name user_uid=%user.uid
+     container=%container.name container_id=%container.id
+     image=%container.image.repository:%container.image.tag
+     shell=%proc.name parent=%proc.pname
+     cmdline=%proc.cmdline pid=%proc.pid)
+  priority: CRITICAL
+  tags: [container, shell, intrusion, ai-gateway]
+
+- rule: Web Shell Detected
+  desc: >
+    A shell was spawned by a web server process inside a container — this
+    almost certainly indicates a remote code execution exploit or a web shell
+    planted by an attacker.
+  condition: shell_from_web_process
+  output: >
+    Possible web shell or RCE in container
+    (user=%user.name container=%container.name
+     image=%container.image.repository:%container.image.tag
+     shell=%proc.name parent_web_process=%proc.pname
+     cmdline=%proc.cmdline)
+  priority: CRITICAL
+  tags: [container, shell, webshell, rce, ai-gateway]
+
+# ---------------------------------------------------------------------------
+# HIGH — Privilege Escalation & Host Access
+# ---------------------------------------------------------------------------
+
+- rule: Container Trying to Access Host Files
+  desc: >
+    A container read a sensitive host file that should never be accessible
+    from within a container.  This may indicate a privilege escalation attempt
+    or a container escape in progress.
+  condition: sensitive_host_file_read
+  output: >
+    Container reading sensitive host file
+    (user=%user.name container=%container.name
+     image=%container.image.repository:%container.image.tag
+     file=%fd.name cmdline=%proc.cmdline)
+  priority: HIGH
+  tags: [container, host_access, privilege_escalation, ai-gateway]
+
+- rule: Unexpected setuid/setgid Binary Execution
+  desc: >
+    A setuid or setgid binary was executed inside a container.  Legitimate
+    containerised applications rarely need setuid binaries; this may indicate
+    a privilege escalation attempt.
+  condition: >
+    spawned_process and container
+    and proc.is_suid_exe = true
+    and not proc.name in (ping, su, sudo)
+  output: >
+    setuid binary executed in container
+    (user=%user.name container=%container.name
+     image=%container.image.repository:%container.image.tag
+     proc=%proc.name cmdline=%proc.cmdline)
+  priority: HIGH
+  tags: [container, privilege_escalation, ai-gateway]
+
+# ---------------------------------------------------------------------------
+# MEDIUM — Suspicious Network Activity
+# ---------------------------------------------------------------------------
+
+- rule: Outbound Connection to Non-Standard Port
+  desc: >
+    A container made an outbound connection on an unusual port.  Legitimate
+    containers typically connect to well-known service ports.  Unusual ports
+    may indicate a C2 channel, data exfiltration, or cryptomining.
+  condition: >
+    outbound and container
+    and not fd.sport in (80, 443, 8080, 8443, 5432, 3306, 6379, 27017)
+    and not fd.sip.name in ("127.0.0.1", "::1")
+    and fd.typechar = 4   # IPv4
+  output: >
+    Container outbound connection on non-standard port
+    (user=%user.name container=%container.name
+     image=%container.image.repository:%container.image.tag
+     connection=%fd.name remote=%fd.rip:%fd.rport)
+  priority: MEDIUM
+  tags: [container, network, ai-gateway]
+
+- rule: Cryptomining Process Detected
+  desc: >
+    A known cryptomining process or suspicious CPU-intensive process was
+    detected running in a container.  Common miner process names and stratum
+    protocol indicators are checked.
+  condition: >
+    spawned_process and container
+    and (
+      proc.name in (xmrig, minerd, cpuminer, ethminer, claymore, t-rex, nbminer)
+      or proc.cmdline contains "stratum+tcp"
+      or proc.cmdline contains "stratum+ssl"
+      or proc.cmdline contains "--donate-level"
+    )
+  output: >
+    Cryptomining process detected in container
+    (user=%user.name container=%container.name
+     image=%container.image.repository:%container.image.tag
+     proc=%proc.name cmdline=%proc.cmdline)
+  priority: CRITICAL
+  tags: [container, cryptomining, ai-gateway]
+
+# ---------------------------------------------------------------------------
+# LOW — Audit & Informational
+# ---------------------------------------------------------------------------
+
+- rule: Package Management Tool Executed in Container
+  desc: >
+    A package manager (apt, yum, pip, etc.) was executed inside a running
+    container.  While not immediately dangerous, this indicates a container
+    is being modified at runtime — a sign of poor practices or active
+    tampering.  Container images should be immutable.
+  condition: >
+    spawned_process and container
+    and proc.name in (apt, apt-get, yum, dnf, pip, pip3, npm, yarn, gem, curl, wget)
+    and not container.image.repository contains "ci"
+    and not container.image.repository contains "build"
+  output: >
+    Package manager executed in container (immutable container violation)
+    (user=%user.name container=%container.name
+     image=%container.image.repository:%container.image.tag
+     tool=%proc.name cmdline=%proc.cmdline)
+  priority: WARNING
+  tags: [container, supply_chain, ai-gateway]
+
+- rule: Kubernetes Service Account Token Read by Unexpected Process
+  desc: >
+    A process read the Kubernetes service-account token from the projected
+    volume.  The token grants API server access; legitimate reads should
+    only come from the container's primary application process.
+  condition: >
+    open_read and container
+    and fd.name startswith "/var/run/secrets/kubernetes.io/serviceaccount"
+    and not proc.name in (kubectl, curl, python3, python, node, java, go)
+  output: >
+    Service account token read by unexpected process
+    (user=%user.name container=%container.name
+     image=%container.image.repository:%container.image.tag
+     proc=%proc.name cmdline=%proc.cmdline file=%fd.name)
+  priority: WARNING
+  tags: [container, k8s_api, lateral_movement, ai-gateway]

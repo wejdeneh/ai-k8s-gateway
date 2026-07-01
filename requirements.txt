@@ -1,0 +1,24 @@
+# AI Agent Kubernetes Security Gateway — Python dependencies
+#
+# Pin minor versions for reproducibility while allowing patch updates.
+# Tested with Python 3.11.
+
+# Web framework & ASGI server
+fastapi>=0.110.0,<1.0.0
+uvicorn[standard]>=0.29.0,<1.0.0
+
+# JWT handling — python-jose with cryptography backend for RS256 support
+python-jose[cryptography]>=3.3.0,<4.0.0
+
+# Async HTTP client for OPA REST API calls
+httpx>=0.27.0,<1.0.0
+
+# Official Kubernetes Python client
+kubernetes>=29.0.0,<31.0.0
+
+# Pydantic v2 for request/response models and settings
+pydantic>=2.7.0,<3.0.0
+pydantic-settings>=2.2.0,<3.0.0
+
+# Rich terminal output for the demo script
+rich>=13.7.0,<14.0.0

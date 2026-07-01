@@ -1,0 +1,311 @@
+# =============================================================================
+# AI Agent Kubernetes Security Gateway — Full Kubernetes Deployment
+# =============================================================================
+#
+# Deploy order:
+#   kubectl apply -f k8s/gateway/namespace.yaml
+#   kubectl apply -f k8s/gateway/rbac.yaml
+#   kubectl apply -f k8s/gateway/configmap-policy.yaml
+#   kubectl apply -f k8s/gateway/secret.yaml         ← edit this first!
+#   kubectl apply -f k8s/gateway/deployment.yaml
+#   kubectl apply -f k8s/gateway/service.yaml
+#
+# Or all at once:
+#   kubectl apply -f k8s/gateway/
+#
+# Quick one-liner:
+#   make deploy-gateway
+# =============================================================================
+
+---
+# ── Namespace ────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-gateway
+  labels:
+    app.kubernetes.io/name: ai-k8s-gateway
+    # Exclude the gateway namespace from Gatekeeper constraints —
+    # the gateway itself needs privileged access to the k8s API.
+    # (Gatekeeper uses namespaceSelector to skip namespaces with this label.)
+    admission.gatekeeper.sh/ignore: "no-self-managing"
+
+---
+# ── JWT Secret ───────────────────────────────────────────────────────────────
+# IMPORTANT: Replace the value below with a real secret before deploying.
+# Generate one with: python -c "import secrets; print(secrets.token_hex(32))"
+# In production, use an external secret manager (AWS Secrets Manager, Vault,
+# GCP Secret Manager) and a tool like External Secrets Operator to inject it.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ai-gateway-secrets
+  namespace: ai-gateway
+type: Opaque
+stringData:
+  JWT_SECRET: "CHANGE-ME-use-openssl-rand-hex-32"
+
+---
+# ── OPA Policy ConfigMap ─────────────────────────────────────────────────────
+# Mounts the Rego policy file into the OPA sidecar container.
+# Update the policy by editing this ConfigMap and rolling the deployment.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opa-policy
+  namespace: ai-gateway
+data:
+  agent_actions.rego: |
+    # Paste the contents of policies/agent_actions.rego here,
+    # OR use kustomize / helm to template it from the file:
+    #   kubectl create configmap opa-policy \
+    #     --from-file=agent_actions.rego=policies/agent_actions.rego \
+    #     -n ai-gateway --dry-run=client -o yaml | kubectl apply -f -
+
+---
+# ── Gateway Config ───────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-gateway-config
+  namespace: ai-gateway
+data:
+  OPA_URL:             "http://localhost:8181"   # OPA runs as a sidecar
+  OPA_POLICY_PATH:     "v1/data/agent/authz"
+  AUDIT_LOG_PATH:      "/var/log/gateway/audit.log"
+  K8S_IN_CLUSTER:      "true"                    # use pod service account
+  JWT_ALGORITHM:       "HS256"
+  JWT_TTL_MINUTES:     "15"
+  MAX_REPLICAS_THRESHOLD: "10"
+  TRUSTED_IMAGE_PREFIXES: '["nginx:","python:","alpine:","gcr.io/","quay.io/","registry.k8s.io/"]'
+
+---
+# ── ServiceAccount ───────────────────────────────────────────────────────────
+# The gateway pods run as this ServiceAccount.
+# Its permissions are defined by the ClusterRole below — deliberately minimal.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-gateway
+  namespace: ai-gateway
+  annotations:
+    # If using AWS EKS with IRSA, add the IAM role ARN here:
+    # eks.amazonaws.com/role-arn: arn:aws:iam::123456789:role/ai-gateway
+
+---
+# ── ClusterRole ──────────────────────────────────────────────────────────────
+# Exactly the permissions the gateway needs — no more.
+# The dispatch table in app/k8s/client.py defines the actual operations;
+# these RBAC rules enforce it at the Kubernetes API level.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ai-gateway-role
+rules:
+  # Pods — list, get (read only from gateway perspective; agents can create via
+  # Deployment, not directly via Pod)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+
+  # Deployments — full CRUD except delete (gateway blocks delete at policy layer)
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+  # Secrets — list only (gateway NEVER returns secret values)
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["list"]
+
+  # Namespaces and ConfigMaps — list only
+  - apiGroups: [""]
+    resources: ["namespaces", "configmaps"]
+    verbs: ["list"]
+
+---
+# ── ClusterRoleBinding ───────────────────────────────────────────────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ai-gateway-binding
+subjects:
+  - kind: ServiceAccount
+    name: ai-gateway
+    namespace: ai-gateway
+roleRef:
+  kind: ClusterRole
+  name: ai-gateway-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ── Deployment ───────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-gateway
+  namespace: ai-gateway
+  labels:
+    app: ai-gateway
+    version: "2.0.0"
+spec:
+  replicas: 2        # 2 replicas for high availability
+  selector:
+    matchLabels:
+      app: ai-gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0    # never take all replicas down during update
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: ai-gateway
+        version: "2.0.0"
+    spec:
+      serviceAccountName: ai-gateway
+
+      # Run as non-root
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      # Shared volume for the audit log (gateway writes, OPA reads nothing)
+      volumes:
+        - name: audit-log
+          emptyDir: {}
+        - name: opa-policy
+          configMap:
+            name: opa-policy
+
+      containers:
+        # ── Gateway container ───────────────────────────────────────────────
+        - name: gateway
+          image: your-registry/ai-k8s-gateway:2.0.0
+          # Build and push with:
+          #   docker build -t your-registry/ai-k8s-gateway:2.0.0 .
+          #   docker push your-registry/ai-k8s-gateway:2.0.0
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: ai-gateway-config
+            - secretRef:
+                name: ai-gateway-secrets
+          volumeMounts:
+            - name: audit-log
+              mountPath: /var/log/gateway
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+        # ── OPA sidecar ─────────────────────────────────────────────────────
+        # Runs in the same pod as the gateway so policy calls are localhost —
+        # no network hop, no TLS needed, sub-millisecond latency.
+        - name: opa
+          image: openpolicyagent/opa:0.68.0
+          args:
+            - "run"
+            - "--server"
+            - "--addr=127.0.0.1:8181"  # localhost only — not exposed externally
+            - "--log-level=info"
+            - "--log-format=json"
+            - "/policies"
+          ports:
+            - containerPort: 8181
+              name: opa
+          volumeMounts:
+            - name: opa-policy
+              mountPath: /policies
+              readOnly: true
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534   # nobody
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8181
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8181
+            initialDelaySeconds: 3
+            periodSeconds: 10
+
+---
+# ── Service ──────────────────────────────────────────────────────────────────
+# ClusterIP: only accessible from inside the cluster.
+# Change to LoadBalancer or add an Ingress if agents run outside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-gateway
+  namespace: ai-gateway
+  labels:
+    app: ai-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: ai-gateway
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+
+---
+# ── HorizontalPodAutoscaler ──────────────────────────────────────────────────
+# Scale out when CPU > 60% (gateway is CPU-bound on JWT verification + OPA calls)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-gateway
+  namespace: ai-gateway
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-gateway
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60

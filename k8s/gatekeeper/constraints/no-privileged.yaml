@@ -1,0 +1,31 @@
+# =============================================================================
+# Constraint: no-privileged-containers
+# =============================================================================
+# Activates the K8sNoPrivilegedContainer policy on all Pods in user namespaces.
+# kube-system and gatekeeper-system are excluded — system components may
+# legitimately need host access.
+# =============================================================================
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sNoPrivilegedContainer
+metadata:
+  name: no-privileged-containers
+  annotations:
+    description: >
+      Prevents privileged containers and host-level namespace sharing across
+      all user namespaces.  Applied as part of the AI Agent K8s Security Gateway.
+spec:
+  enforcementAction: deny      # deny (hard block) vs warn (audit-only)
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    # Exclude system namespaces where legitimate privileged workloads run.
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - kube-system
+            - kube-public
+            - kube-node-lease
+            - gatekeeper-system
