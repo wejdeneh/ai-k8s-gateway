@@ -50,10 +50,8 @@ from app.risk.scorer import score as compute_risk
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
-)
+from app.audit.structured_logger import setup_structured_logging
+setup_structured_logging(logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,68 @@
+# Default values for the AI Agent Kubernetes Security Gateway.
+
+replicaCount: 2
+
+image:
+  repository: your-registry.io/ai-k8s-gateway
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "2.0.0"
+
+security:
+  # The JWT secret used to verify agent tokens.
+  # IMPORTANT: In production, inject this via an external secret manager/Vault or env override.
+  # This value is only a default fallback to ensure testability.
+  jwtSecret: "dev-secret-change-in-production"
+  jwtAlgorithm: "HS256"
+  jwtTtlMinutes: 15
+
+opa:
+  image:
+    repository: openpolicyagent/opa
+    tag: 0.68.0
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+config:
+  maxReplicasThreshold: 10
+  # JSON string of trusted registry prefixes
+  trustedImagePrefixes: '["nginx:","python:","alpine:","busybox:","gcr.io/","quay.io/","registry.k8s.io/"]'
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60
+
+networkPolicy:
+  # RESTRICT inbound access to the gateway only to authorized agent pods
+  enabled: true
+  # Custom ingress rules can be defined here, e.g. allowing ingress from ingress controller
+  allowFromNamespaces: []
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: "ai-gateway"
+
+service:
+  type: ClusterIP
+  port: 8000
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

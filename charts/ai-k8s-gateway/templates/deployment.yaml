@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ai-k8s-gateway.fullname" . }}
+  labels:
+    {{- include "ai-k8s-gateway.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ai-k8s-gateway.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "ai-k8s-gateway.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "ai-k8s-gateway.serviceAccountName" . }}
+      
+      # Pod Security Context - run as non-root
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      volumes:
+        - name: audit-log
+          emptyDir: {}
+        - name: opa-policy
+          configMap:
+            name: {{ include "ai-k8s-gateway.fullname" . }}-policy
+
+      containers:
+        # ── Gateway Container ───────────────────────────────────────────────
+        - name: gateway
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: {{ include "ai-k8s-gateway.fullname" . }}-config
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-k8s-gateway.fullname" . }}-secrets
+                  key: JWT_SECRET
+          volumeMounts:
+            - name: audit-log
+              mountPath: /var/log/gateway
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+        # ── OPA Sidecar Container ───────────────────────────────────────────
+        - name: opa
+          image: "{{ .Values.opa.image.repository }}:{{ .Values.opa.image.tag }}"
+          imagePullPolicy: {{ .Values.opa.image.pullPolicy }}
+          args:
+            - "run"
+            - "--server"
+            - "--addr=127.0.0.1:8181"   # Bind to localhost only (locked down)
+            - "--log-level=info"
+            - "--log-format=json"
+            - "/policies"
+          ports:
+            - containerPort: 8181
+              name: opa
+          volumeMounts:
+            - name: opa-policy
+              mountPath: /policies
+              readOnly: true
+          resources:
+            {{- toYaml .Values.opa.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534   # nobody
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8181
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8181
+            initialDelaySeconds: 3
+            periodSeconds: 10

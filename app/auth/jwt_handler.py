@@ -30,6 +30,15 @@ from jose import JWTError, jwt
 
 from app.config import settings
 
+# ── Production Security Guardrail ──────────────────────────────────────────
+# Fail fast if running in-cluster with the default developer secret.
+if settings.k8s_in_cluster and settings.jwt_secret == "dev-secret-change-in-production":
+    raise RuntimeError(
+        "SECURITY COMPLIANCE FAILURE: The default JWT_SECRET value "
+        "('dev-secret-change-in-production') cannot be used when "
+        "K8S_IN_CLUSTER is enabled. Update the environment configuration."
+    )
+
 # ---------------------------------------------------------------------------
 # Pre-defined agent identities.
 # In a real system these would live in your identity provider (Okta, Cognito,

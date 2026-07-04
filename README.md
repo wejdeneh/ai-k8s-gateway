@@ -181,6 +181,23 @@ make docker-up      # gateway + OPA via docker-compose
 make demo           # run all 4 scenarios
 ```
 
+### Deploy Gateway via Helm (Layer 1 — Production Pattern)
+
+We package the gateway and the OPA sidecar inside a production-ready Helm chart. This automatically configures:
+- **Multi-Container Pod**: FastAPI Gateway + OPA Sidecar communicating via localhost loopback (`127.0.0.1:8181`).
+- **Secure Network Isolation**: Installs a strict `NetworkPolicy` restricting ingress to port 8000 and blocking all egress except to the Kubernetes API Server and loopback.
+- **Autoscaling & High Availability**: Configures a `HorizontalPodAutoscaler` (HPA) scaling between 2 and 10 replicas.
+- **Automated Secret Generation**: Enforces secure-by-default secret management by dynamically generating a cryptographically secure 32-character random `JWT_SECRET` at install time.
+- **Cloud-Native Logging**: Standard container stdout/stderr logs are output in structured JSON format.
+
+```bash
+# Install the Helm Chart
+helm install ai-k8s-gateway charts/ai-k8s-gateway --namespace ai-gateway --create-namespace
+
+# Verify gateway & OPA containers are running side-by-side
+kubectl get pods -n ai-gateway
+```
+
 ### Add Gatekeeper (Layer 2) — optional
 
 ```bash

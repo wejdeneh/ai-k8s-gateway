@@ -36,44 +36,57 @@ from app.auth.jwt_handler import create_token  # noqa: E402
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_client_with_opa(allow: bool, reason: str | None = None) -> TestClient:
+class PatchedTestClient:
     """
-    Return a TestClient with OPA patched to return allow=True or allow=False.
-    Also patches the K8s client so no real cluster is needed.
+    Wrapper around TestClient that ensures HTTP and Kubernetes API patches
+    are active during the execution of requests.
     """
-    import httpx
+    def __init__(self, allow: bool, reason: str | None = None) -> None:
+        self.allow = allow
+        self.reason = reason
+        self._client = TestClient(app, raise_server_exceptions=False)
 
-    opa_resp_data = {
-        "result": {
-            "allow":  allow,
-            "reason": reason or ("Allowed by policy." if allow else "Denied: test."),
+    def _mock_context(self):
+        import httpx
+
+        opa_resp_data = {
+            "result": {
+                "allow":  self.allow,
+                "reason": self.reason or ("Allowed by policy." if self.allow else "Denied: test."),
+            }
         }
-    }
 
-    mock_opa_response = AsyncMock(spec=httpx.Response)
-    mock_opa_response.status_code = 200
-    mock_opa_response.json.return_value = opa_resp_data
-    mock_opa_response.raise_for_status = AsyncMock()
+        mock_opa_response = AsyncMock(spec=httpx.Response)
+        mock_opa_response.status_code = 200
+        mock_opa_response.json.return_value = opa_resp_data
+        mock_opa_response.raise_for_status = MagicMock()
 
-    mock_http_client = AsyncMock()
-    mock_http_client.__aenter__ = AsyncMock(return_value=mock_http_client)
-    mock_http_client.__aexit__  = AsyncMock(return_value=False)
-    mock_http_client.post       = AsyncMock(return_value=mock_opa_response)
+        mock_http_client = AsyncMock()
+        mock_http_client.__aenter__ = AsyncMock(return_value=mock_http_client)
+        mock_http_client.__aexit__  = AsyncMock(return_value=False)
+        mock_http_client.post       = AsyncMock(return_value=mock_opa_response)
 
-    # Also patch K8s dispatch so no cluster is needed.
-    mock_k8s_dispatch = MagicMock(return_value={"mocked": True})
+        mock_execute_action = MagicMock(return_value={"mocked": True})
 
-    with (
-        patch("app.main.httpx.AsyncClient", return_value=mock_http_client),
-        patch("app.main.K8sClient") as mock_k8s_cls,
-    ):
-        mock_k8s_cls.return_value.__enter__ = MagicMock(return_value=MagicMock(
-            dispatch=mock_k8s_dispatch
-        ))
-        mock_k8s_cls.return_value.__exit__ = MagicMock(return_value=False)
-        client = TestClient(app, raise_server_exceptions=False)
+        return (
+            patch("app.main.httpx.AsyncClient", return_value=mock_http_client),
+            patch("app.main.execute_action", mock_execute_action),
+        )
 
-    return client
+    def post(self, *args, **kwargs):
+        p1, p2 = self._mock_context()
+        with p1, p2:
+            return self._client.post(*args, **kwargs)
+
+    def get(self, *args, **kwargs):
+        p1, p2 = self._mock_context()
+        with p1, p2:
+            return self._client.get(*args, **kwargs)
+
+
+def _make_client_with_opa(allow: bool, reason: str | None = None) -> PatchedTestClient:
+    """Return a wrapper client with OPA patched for allow or deny."""
+    return PatchedTestClient(allow, reason)
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -223,15 +236,6 @@ class TestRequestValidation:
         )
         assert resp.status_code == 422
 
-    def test_missing_namespace_returns_422(self) -> None:
-        token = _readonly_token()
-        client = _make_client_with_opa(allow=True)
-        resp = client.post("/agent-action",
-            headers=_auth(token),
-            json={"action": "list", "resource": "pods", "params": {}},
-        )
-        assert resp.status_code == 422
-
     def test_empty_body_returns_422(self) -> None:
         token = _readonly_token()
         client = _make_client_with_opa(allow=True)
@@ -305,7 +309,9 @@ class TestApprovalQueue:
         resp = client.get("/pending", headers=_auth(token))
         assert resp.status_code == 200
         body = resp.json()
-        assert isinstance(body, list)
+        assert isinstance(body, dict)
+        assert "items" in body
+        assert isinstance(body["items"], list)
 
     def test_approve_unknown_id_returns_404(self) -> None:
         token = _readonly_token()

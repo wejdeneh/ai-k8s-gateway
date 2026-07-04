@@ -1,0 +1,17 @@
+apiVersion: v2
+name: ai-k8s-gateway
+description: A Helm chart for deploying the AI Agent Kubernetes Security Gateway, including the OPA policy engine sidecar.
+type: application
+version: 2.0.0
+appVersion: "2.0.0"
+keywords:
+  - security
+  - kubernetes
+  - devsecops
+  - opa
+  - copilot
+  - gateway
+home: https://github.com/wejdeneh/ai-k8s-gateway
+maintainers:
+  - name: wejdeneh
+    email: wejdeneh@github.com

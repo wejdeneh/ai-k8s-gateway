@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -88,43 +88,41 @@ def opa_deny_response() -> dict:
 # TestClient fixtures  (OPA mocked — no sidecar needed for unit tests)
 # ---------------------------------------------------------------------------
 
-def _make_client(opa_response: dict) -> TestClient:
+def _make_client_generator(opa_response: dict):
     """
-    Create a FastAPI TestClient with the OPA HTTP call patched.
-
-    Uses unittest.mock to replace httpx.AsyncClient.post so tests never
-    need a running OPA instance.
+    Create a FastAPI TestClient generator with the OPA HTTP call and Kubernetes API execution patched.
     """
     import httpx
 
     mock_resp = AsyncMock(spec=httpx.Response)
     mock_resp.status_code = 200
     mock_resp.json.return_value = opa_response
-    mock_resp.raise_for_status = AsyncMock()
+    mock_resp.raise_for_status = MagicMock()
 
     mock_http = AsyncMock()
     mock_http.__aenter__ = AsyncMock(return_value=mock_http)
     mock_http.__aexit__  = AsyncMock(return_value=False)
     mock_http.post       = AsyncMock(return_value=mock_resp)
 
-    with patch("app.main.httpx.AsyncClient", return_value=mock_http):
-        # Use context manager so the patch stays active for the client lifetime.
-        pass
+    mock_execute_action = MagicMock(return_value={"mocked": True})
 
-    # For TestClient (sync), we patch at the module level for the session.
-    return TestClient(app, raise_server_exceptions=True)
+    with (
+        patch("app.main.httpx.AsyncClient", return_value=mock_http),
+        patch("app.main.execute_action", mock_execute_action),
+    ):
+        yield TestClient(app, raise_server_exceptions=True)
 
 
 @pytest.fixture
-def test_client(opa_allow_response: dict) -> TestClient:
+def test_client(opa_allow_response: dict):
     """TestClient where OPA always returns allow=True."""
-    return _make_client(opa_allow_response)
+    yield from _make_client_generator(opa_allow_response)
 
 
 @pytest.fixture
-def deny_client(opa_deny_response: dict) -> TestClient:
+def deny_client(opa_deny_response: dict):
     """TestClient where OPA always returns allow=False."""
-    return _make_client(opa_deny_response)
+    yield from _make_client_generator(opa_deny_response)
 
 
 # ---------------------------------------------------------------------------

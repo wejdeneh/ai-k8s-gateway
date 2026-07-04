@@ -1,0 +1,43 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ai-k8s-gateway.fullname" . }}-network-policy
+  labels:
+    {{- include "ai-k8s-gateway.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ai-k8s-gateway.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow incoming traffic to the gateway port 8000
+    - ports:
+        - protocol: TCP
+          port: 8000
+      {{- if .Values.networkPolicy.allowFromNamespaces }}
+      from:
+        {{- range .Values.networkPolicy.allowFromNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . | quote }}
+        {{- end }}
+      {{- end }}
+  egress:
+    # Allow outbound traffic to OPA on localhost (not restricted by default, but egress policy requires explicit rules)
+    - ports:
+        - protocol: TCP
+          port: 8181
+      to:
+        - podSelector:
+            matchLabels:
+              {{- include "ai-k8s-gateway.selectorLabels" . | nindent 14 }}
+    # Allow outbound traffic to the Kubernetes API Server (typically port 443 or 6443)
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+{{- end }}

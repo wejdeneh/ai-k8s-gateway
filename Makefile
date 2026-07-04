@@ -150,6 +150,18 @@ print('All checks passed. score=', rs.score, 'level=', rs.level)"
 lint:
 	$(PYTHON) -m ruff check app/ demo/ --select E,W,F,I
 
+## test: run all python unit and integration tests
+test:
+	pytest tests/ -v
+
+## helm-lint: run helm lint against the security gateway chart
+helm-lint:
+	helm lint charts/ai-k8s-gateway
+
+## opa-test: run OPA unit tests in Docker
+opa-test:
+	docker run --rm -v "$(shell pwd)/policies:/policies" openpolicyagent/opa test /policies -v
+
 # ---------------------------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------------------------

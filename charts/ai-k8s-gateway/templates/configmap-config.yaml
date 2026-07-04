@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ai-k8s-gateway.fullname" . }}-config
+  labels:
+    {{- include "ai-k8s-gateway.labels" . | nindent 4 }}
+data:
+  OPA_URL: "http://localhost:8181"   # OPA is deployed as a localhost sidecar
+  OPA_POLICY_PATH: "v1/data/agent/authz"
+  AUDIT_LOG_PATH: "/var/log/gateway/audit.log"
+  K8S_IN_CLUSTER: "true"             # Running as a pod in-cluster
+  JWT_ALGORITHM: {{ .Values.security.jwtAlgorithm | quote }}
+  JWT_TTL_MINUTES: {{ .Values.security.jwtTtlMinutes | quote }}
+  MAX_REPLICAS_THRESHOLD: {{ .Values.config.maxReplicasThreshold | quote }}
+  TRUSTED_IMAGE_PREFIXES: {{ .Values.config.trustedImagePrefixes | quote }}

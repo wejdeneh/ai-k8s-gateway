@@ -1,0 +1,36 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "ai-k8s-gateway.fullname" . }}-role
+  labels:
+    {{- include "ai-k8s-gateway.labels" . | nindent 4 }}
+rules:
+  # Pods — read-only access
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+
+  # Deployments — mutations (create, update, patch)
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+  # Secrets, namespaces, configmaps — discovery and validation
+  - apiGroups: [""]
+    resources: ["secrets", "namespaces", "configmaps"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "ai-k8s-gateway.fullname" . }}-binding
+  labels:
+    {{- include "ai-k8s-gateway.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "ai-k8s-gateway.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "ai-k8s-gateway.fullname" . }}-role
+  apiGroup: rbac.authorization.k8s.io
