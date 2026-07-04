@@ -332,6 +332,9 @@ pytest tests/ -v
 
 ```
 ai-k8s-gateway/
+├── .github/
+│   └── workflows/
+│       └── ci.yml            # CI/CD: Ruff, Bandit, Pip-Audit, Kubeconform
 ├── app/
 │   ├── main.py               # FastAPI: 5-stage pipeline
 │   ├── config.py             # Pydantic settings (env vars)
@@ -341,13 +344,17 @@ ai-k8s-gateway/
 │   ├── risk/
 │   │   └── scorer.py         # v2 rule-based scorer (params-aware)
 │   ├── audit/
-│   │   └── logger.py         # Thread-safe JSONL audit logger
+│   │   ├── logger.py         # Thread-safe JSONL audit logger
+│   │   └── structured_logger.py # Stdout JSON structured logger
 │   ├── approval/
 │   │   └── queue.py          # Human-approval queue
 │   └── k8s/
 │       └── client.py         # K8s dispatch table + secure defaults
 ├── policies/
-│   └── agent_actions.rego    # v2 OPA policy (deny by default)
+│   ├── agent_actions.rego    # v2 OPA policy (deny by default)
+│   └── agent_actions_test.rego # Rego policy unit tests
+├── charts/
+│   └── ai-k8s-gateway/       # Helm Chart (Deployments, NetworkPolicies, HPAs, RBAC)
 ├── k8s/
 │   ├── gatekeeper/
 │   │   ├── install.sh
@@ -357,18 +364,18 @@ ai-k8s-gateway/
 │       ├── install.sh
 │       └── rules.yaml        # 6 runtime detection rules
 ├── tests/
-│   ├── test_scorer.py        # 30+ scorer unit tests
+│   ├── test_scorer.py        # 50+ scorer unit tests
 │   ├── test_jwt.py           # JWT handler tests
 │   └── test_gateway.py       # Gateway integration tests (OPA mocked)
 ├── demo/
 │   ├── setup.sh              # Auto-provision kind cluster
 │   └── agent_client.py       # 4-scenario end-to-end demo
-├── Makefile                  # make setup / gatekeeper / falco / demo / test
+├── Makefile                  # make setup / gatekeeper / falco / demo / test / lint / helm-lint
 ├── docker-compose.yml        # Gateway + OPA sidecar
 ├── Dockerfile
 ├── requirements.txt
 ├── requirements-dev.txt
-└── .env.example
+├── .env.example
 ```
 
 ---
