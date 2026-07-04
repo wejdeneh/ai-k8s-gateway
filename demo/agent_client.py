@@ -37,7 +37,6 @@ import time
 from typing import Any
 
 import httpx
-from rich import print as rprint
 from rich.console import Console
 from rich.panel import Panel
 from rich.rule import Rule
@@ -60,6 +59,7 @@ DEFAULT_GATEWAY = "http://localhost:8000"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def mint(agent_id: str) -> str:
     """Mint a fresh JWT for the given agent identity."""
     return create_token(agent_id)
@@ -78,10 +78,10 @@ def post_action(
         f"{gateway}/agent-action",
         headers={"Authorization": f"Bearer {token}"},
         json={
-            "action":    action,
-            "resource":  resource,
+            "action": action,
+            "resource": resource,
             "namespace": namespace,
-            "params":    params or {},
+            "params": params or {},
         },
         timeout=15.0,
     )
@@ -96,12 +96,17 @@ def get_pending(gateway: str, token: str) -> httpx.Response:
     )
 
 
-def approve(gateway: str, token: str, request_id: str, approved: bool) -> httpx.Response:
+def approve(
+    gateway: str, token: str, request_id: str, approved: bool
+) -> httpx.Response:
     """POST /approve/{id}."""
     return httpx.post(
         f"{gateway}/approve/{request_id}",
         headers={"Authorization": f"Bearer {token}"},
-        json={"approved": approved, "reason": "Demo: operator approved high-risk action."},
+        json={
+            "approved": approved,
+            "reason": "Demo: operator approved high-risk action.",
+        },
         timeout=10.0,
     )
 
@@ -166,6 +171,7 @@ def check_gateway(gateway: str) -> bool:
 # Demo scenarios
 # ---------------------------------------------------------------------------
 
+
 def scenario_1_low_risk(gateway: str) -> None:
     """
     Scenario 1: Low-risk read action.
@@ -182,8 +188,11 @@ def scenario_1_low_risk(gateway: str) -> None:
     console.print("[dim]✔  Minted JWT for agent-readonly (role=readonly)[/dim]")
 
     resp = post_action(
-        gateway, token,
-        action="list", resource="pods", namespace="demo",
+        gateway,
+        token,
+        action="list",
+        resource="pods",
+        namespace="demo",
     )
     body = print_response(resp, "List pods — demo namespace")
 
@@ -197,10 +206,15 @@ def scenario_1_low_risk(gateway: str) -> None:
     print_audit_tail()
 
     # Demonstrate that agent-readonly is BLOCKED from writing.
-    console.print("\n[dim]─── Cross-check: readonly agent tries to CREATE (should be denied) ───[/dim]")
+    console.print(
+        "\n[dim]─── Cross-check: readonly agent tries to CREATE (should be denied) ───[/dim]"
+    )
     bad_resp = post_action(
-        gateway, token,
-        action="create", resource="deployments", namespace="demo",
+        gateway,
+        token,
+        action="create",
+        resource="deployments",
+        namespace="demo",
         params={"name": "hacker-app", "image": "malicious:latest"},
     )
     print_response(bad_resp, "Create deployment as readonly — expect 403")
@@ -213,7 +227,9 @@ def scenario_2_medium_risk(gateway: str) -> None:
     agent-deploy creates a deployment in the demo namespace.
     Expected pipeline: JWT ✓ → risk=medium → OPA allow → k8s execute → 200
     """
-    console.print(Rule("[bold yellow]SCENARIO 2 — MEDIUM RISK: Create Deployment[/bold yellow]"))
+    console.print(
+        Rule("[bold yellow]SCENARIO 2 — MEDIUM RISK: Create Deployment[/bold yellow]")
+    )
     console.print(
         "[dim]Agent: agent-deploy │ Action: create │ Resource: deployments │ Namespace: demo[/dim]\n"
     )
@@ -222,12 +238,15 @@ def scenario_2_medium_risk(gateway: str) -> None:
     console.print("[dim]✔  Minted JWT for agent-deploy (role=deployer)[/dim]")
 
     resp = post_action(
-        gateway, token,
-        action="create", resource="deployments", namespace="demo",
+        gateway,
+        token,
+        action="create",
+        resource="deployments",
+        namespace="demo",
         params={
-            "name":           "ai-managed-app",
-            "image":          "nginx:alpine",
-            "replicas":       2,
+            "name": "ai-managed-app",
+            "image": "nginx:alpine",
+            "replicas": 2,
             "container_port": 80,
         },
     )
@@ -243,10 +262,15 @@ def scenario_2_medium_risk(gateway: str) -> None:
     print_audit_tail()
 
     # Demonstrate the kube-system mutation block.
-    console.print("\n[dim]─── Cross-check: deployer tries to mutate kube-system (should be denied) ───[/dim]")
+    console.print(
+        "\n[dim]─── Cross-check: deployer tries to mutate kube-system (should be denied) ───[/dim]"
+    )
     bad_resp = post_action(
-        gateway, token,
-        action="create", resource="deployments", namespace="kube-system",
+        gateway,
+        token,
+        action="create",
+        resource="deployments",
+        namespace="kube-system",
         params={"name": "evil-deploy", "image": "busybox"},
     )
     print_response(bad_resp, "Create in kube-system as deployer — expect 403")
@@ -275,7 +299,11 @@ def scenario_3_high_risk(gateway: str) -> None:
       endpoints are live and ready, so a reviewer can see the full
       infrastructure without needing a custom policy relaxation in the demo.
     """
-    console.print(Rule("[bold red]SCENARIO 3 — HIGH RISK: Attempted kube-system Delete[/bold red]"))
+    console.print(
+        Rule(
+            "[bold red]SCENARIO 3 — HIGH RISK: Attempted kube-system Delete[/bold red]"
+        )
+    )
     console.print(
         "[dim]Agent: agent-deploy │ Action: delete │ Resource: pods │ Namespace: kube-system[/dim]\n"
     )
@@ -291,11 +319,14 @@ def scenario_3_high_risk(gateway: str) -> None:
     # ── Part a: OPA hard-blocks the delete ────────────────────────────────
     console.print("[bold]Part a — Delete in kube-system (OPA must deny this)[/bold]")
     resp = post_action(
-        gateway, deploy_token,
-        action="delete", resource="pods", namespace="kube-system",
+        gateway,
+        deploy_token,
+        action="delete",
+        resource="pods",
+        namespace="kube-system",
         params={"name": "kube-proxy-xyz"},
     )
-    body = print_response(resp, "Delete pod in kube-system — expect 403 deny")
+    print_response(resp, "Delete pod in kube-system — expect 403 deny")
 
     if resp.status_code == 403:
         console.print(
@@ -343,6 +374,7 @@ def scenario_3_high_risk(gateway: str) -> None:
 # Scenario 4: Malicious pod attack — content-aware defence in depth
 # ---------------------------------------------------------------------------
 
+
 def scenario_4_malicious_pod(gateway: str) -> None:
     """
     Scenario 4: A malicious pod deployment attempt — demonstrating content-aware
@@ -357,9 +389,11 @@ def scenario_4_malicious_pod(gateway: str) -> None:
     Then shows what Gatekeeper (Layer 2) and Falco (Layer 3) do even if
     the gateway is bypassed.
     """
-    console.print(Rule(
-        "[bold red]SCENARIO 4 — MALICIOUS POD DEPLOYMENT (v2 content-aware)[/bold red]"
-    ))
+    console.print(
+        Rule(
+            "[bold red]SCENARIO 4 — MALICIOUS POD DEPLOYMENT (v2 content-aware)[/bold red]"
+        )
+    )
     console.print(
         "[dim]Testing defence-in-depth against a malicious workload deployment.\n"
         "v2 gateway now inspects the PAYLOAD — not just action/resource/namespace.[/dim]\n"
@@ -369,20 +403,25 @@ def scenario_4_malicious_pod(gateway: str) -> None:
     console.print("[dim]✔  Minted JWT for agent-deploy (role=deployer)[/dim]\n")
 
     # ── Attack 1: Privileged container ───────────────────────────────────────
-    console.print("[bold]Attack 1 — Privileged container (securityContext.privileged=true)[/bold]")
+    console.print(
+        "[bold]Attack 1 — Privileged container (securityContext.privileged=true)[/bold]"
+    )
     console.print(
         "[dim]This would give the container full root access to the host node.\n"
         "Without content-aware checking, the gateway v1 would have ALLOWED this\n"
         "(create + deployments + demo = score 1 = LOW).  v2 catches it.[/dim]\n"
     )
     resp = post_action(
-        gateway, deploy_token,
-        action="create", resource="deployments", namespace="demo",
+        gateway,
+        deploy_token,
+        action="create",
+        resource="deployments",
+        namespace="demo",
         params={
-            "name":       "evil-privileged",
-            "image":      "nginx:alpine",   # trusted image — but privileged flag is the problem
+            "name": "evil-privileged",
+            "image": "nginx:alpine",  # trusted image — but privileged flag is the problem
             "privileged": True,
-            "replicas":   1,
+            "replicas": 1,
         },
     )
     body = print_response(resp, "Create privileged container — expect 403")
@@ -399,11 +438,14 @@ def scenario_4_malicious_pod(gateway: str) -> None:
         "v1 would have allowed this.  v2 blocks at OPA + elevates risk score.[/dim]\n"
     )
     resp = post_action(
-        gateway, deploy_token,
-        action="create", resource="deployments", namespace="demo",
+        gateway,
+        deploy_token,
+        action="create",
+        resource="deployments",
+        namespace="demo",
         params={
-            "name":     "evil-miner",
-            "image":    "cryptominer:latest",   # not in trusted_image_prefixes
+            "name": "evil-miner",
+            "image": "cryptominer:latest",  # not in trusted_image_prefixes
             "replicas": 1,
         },
     )
@@ -415,18 +457,23 @@ def scenario_4_malicious_pod(gateway: str) -> None:
         console.print(f"[red]❌  UNEXPECTED: got HTTP {resp.status_code}[/red]\n")
 
     # ── Attack 3: Resource exhaustion (DoS) ───────────────────────────────────
-    console.print("[bold]Attack 3 — Resource exhaustion (50 replicas = potential DoS)[/bold]")
+    console.print(
+        "[bold]Attack 3 — Resource exhaustion (50 replicas = potential DoS)[/bold]"
+    )
     console.print(
         "[dim]Requesting 50 replicas of an nginx pod.  This could starve the node.\n"
         "Risk score: 1(create) + 1(replicas>10) = 2 -> MEDIUM, plus OPA deny.[/dim]\n"
     )
     resp = post_action(
-        gateway, deploy_token,
-        action="create", resource="deployments", namespace="demo",
+        gateway,
+        deploy_token,
+        action="create",
+        resource="deployments",
+        namespace="demo",
         params={
-            "name":     "evil-dos",
-            "image":    "nginx:alpine",   # trusted image
-            "replicas": 50,              # > max_replicas_threshold (10)
+            "name": "evil-dos",
+            "image": "nginx:alpine",  # trusted image
+            "replicas": 50,  # > max_replicas_threshold (10)
         },
     )
     body = print_response(resp, "Create deployment with 50 replicas — expect 403")
@@ -437,7 +484,9 @@ def scenario_4_malicious_pod(gateway: str) -> None:
         console.print(f"[red]❌  UNEXPECTED: got HTTP {resp.status_code}[/red]\n")
 
     # ── Layer 2: Gatekeeper (bypass proof) ───────────────────────────────────
-    console.print(Rule("[dim]Layer 2: Gatekeeper (Kubernetes Admission Controller)[/dim]"))
+    console.print(
+        Rule("[dim]Layer 2: Gatekeeper (Kubernetes Admission Controller)[/dim]")
+    )
     console.print(
         "[dim]Even if an attacker bypasses the gateway entirely (e.g. uses kubectl\n"
         "directly with a stolen kubeconfig), Gatekeeper enforces the same policies\n"
@@ -447,8 +496,8 @@ def scenario_4_malicious_pod(gateway: str) -> None:
         "  kubectl run bad-pod --image=malicious:latest -n demo\n"
         "  # Error: admission webhook denied: image 'malicious:latest'\n"
         "    is not from an approved registry\n\n"
-        "  kubectl run priv-pod --image=nginx:alpine --overrides=\'{\"spec\":{\"containers\":\n"
-        "    [{\"name\":\"priv\",\"image\":\"nginx:alpine\",\"securityContext\":{\"privileged\":true}}]}}\' -n demo\n"
+        '  kubectl run priv-pod --image=nginx:alpine --overrides=\'{"spec":{"containers":\n'
+        '    [{"name":"priv","image":"nginx:alpine","securityContext":{"privileged":true}}]}}\' -n demo\n'
         "  # Error: container 'priv' has securityContext.privileged=true — forbidden[/dim]"
     )
 
@@ -473,7 +522,6 @@ def scenario_4_malicious_pod(gateway: str) -> None:
     print_audit_tail(n=3)
 
 
-
 def print_audit_summary(audit_path: str = "audit.log") -> None:
     """Summarise all audit records in a Rich table."""
     console.print(Rule("[bold cyan]AUDIT LOG SUMMARY[/bold cyan]"))
@@ -486,8 +534,14 @@ def print_audit_summary(audit_path: str = "audit.log") -> None:
         lines = fh.readlines()
 
     table = Table(
-        "Timestamp", "Identity", "Action", "Resource", "Namespace",
-        "Risk", "Score", "Decision",
+        "Timestamp",
+        "Identity",
+        "Action",
+        "Resource",
+        "Namespace",
+        "Risk",
+        "Score",
+        "Decision",
         title=f"Audit records ({len(lines)} total)",
         show_lines=True,
     )
@@ -497,11 +551,11 @@ def print_audit_summary(audit_path: str = "audit.log") -> None:
             r = json.loads(line)
             decision = r["decision"]
             colour = {
-                "allow":            "green",
-                "deny":             "red",
+                "allow": "green",
+                "deny": "red",
                 "pending-approval": "yellow",
-                "human-allow":      "green",
-                "human-deny":       "red",
+                "human-allow": "green",
+                "human-deny": "red",
             }.get(decision, "white")
 
             table.add_row(
@@ -523,6 +577,7 @@ def print_audit_summary(audit_path: str = "audit.log") -> None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -572,10 +627,10 @@ def main() -> None:
 
     # ── Run scenarios ─────────────────────────────────────────────────────
     scenarios = [
-        (scenario_1_low_risk,       "Low-risk scenario"),
-        (scenario_2_medium_risk,    "Medium-risk scenario"),
-        (scenario_3_high_risk,      "High-risk + approval scenario"),
-        (scenario_4_malicious_pod,  "Malicious pod attack scenario (v2)"),
+        (scenario_1_low_risk, "Low-risk scenario"),
+        (scenario_2_medium_risk, "Medium-risk scenario"),
+        (scenario_3_high_risk, "High-risk + approval scenario"),
+        (scenario_4_malicious_pod, "Malicious pod attack scenario (v2)"),
     ]
 
     for fn, name in scenarios:
@@ -584,7 +639,7 @@ def main() -> None:
         except httpx.RequestError as exc:
             console.print(f"[red]Network error during {name!r}: {exc}[/red]")
         console.print()
-        time.sleep(0.5)   # small pause for readability
+        time.sleep(0.5)  # small pause for readability
 
     # ── Final audit summary ───────────────────────────────────────────────
     print_audit_summary(args.audit)

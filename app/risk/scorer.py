@@ -52,31 +52,46 @@ from app.config import settings
 # ---------------------------------------------------------------------------
 
 ACTION_WEIGHTS: dict[str, int] = {
-    "get":    0, "list":   0, "watch":  0,
-    "create": 1, "update": 1, "patch":  1, "apply":  1,
-    "delete": 2, "replace": 2, "exec":  2,
+    "get": 0,
+    "list": 0,
+    "watch": 0,
+    "create": 1,
+    "update": 1,
+    "patch": 1,
+    "apply": 1,
+    "delete": 2,
+    "replace": 2,
+    "exec": 2,
 }
 
 HIGH_RISK_NAMESPACES: frozenset[str] = frozenset(
     {"kube-system", "kube-public", "kube-node-lease"}
 )
 
-SENSITIVE_RESOURCES: frozenset[str] = frozenset({
-    "secret", "secrets",
-    "role", "roles",
-    "rolebinding", "rolebindings",
-    "clusterrole", "clusterroles",
-    "clusterrolebinding", "clusterrolebindings",
-    "serviceaccount", "serviceaccounts",
-})
+SENSITIVE_RESOURCES: frozenset[str] = frozenset(
+    {
+        "secret",
+        "secrets",
+        "role",
+        "roles",
+        "rolebinding",
+        "rolebindings",
+        "clusterrole",
+        "clusterroles",
+        "clusterrolebinding",
+        "clusterrolebindings",
+        "serviceaccount",
+        "serviceaccounts",
+    }
+)
 
 # Security context fields that allow container-to-host escape.
 PRIVILEGED_FIELDS: dict[str, int] = {
-    "privileged":  3,  # full container escape — highest risk
+    "privileged": 3,  # full container escape — highest risk
     "hostNetwork": 2,  # shares host network stack
-    "hostPID":     2,  # can see and signal all host processes
-    "hostIPC":     2,  # shares host IPC namespace
-    "hostPath":    2,  # mounts host filesystem paths
+    "hostPID": 2,  # can see and signal all host processes
+    "hostIPC": 2,  # shares host IPC namespace
+    "hostPath": 2,  # mounts host filesystem paths
 }
 
 # Verbs that accept a workload payload worth inspecting.
@@ -90,18 +105,19 @@ WRITE_VERBS: frozenset[str] = frozenset(
 # so we can use dataclass-style defaults)
 # ---------------------------------------------------------------------------
 
+
 class RiskLevel:
-    LOW    = "low"
+    LOW = "low"
     MEDIUM = "medium"
-    HIGH   = "high"
+    HIGH = "high"
 
 
 class RiskScore:
     """Result of a risk scoring operation."""
 
     def __init__(self, level: str, score: int, reasons: list[str]) -> None:
-        self.level   = level
-        self.score   = score
+        self.level = level
+        self.score = score
         self.reasons = reasons
 
     def __repr__(self) -> str:
@@ -111,6 +127,7 @@ class RiskScore:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def score(
     action: str,
@@ -136,8 +153,8 @@ def score(
     reasons: list[str] = []
     total = 0
 
-    action_lower   = action.lower().strip()
-    ns_lower       = namespace.lower().strip()
+    action_lower = action.lower().strip()
+    ns_lower = namespace.lower().strip()
     resource_lower = resource.lower().strip()
 
     # ── 1. Action weight ─────────────────────────────────────────────────
@@ -148,9 +165,7 @@ def score(
     # ── 2. Namespace weight ──────────────────────────────────────────────
     if ns_lower in HIGH_RISK_NAMESPACES:
         total += 2
-        reasons.append(
-            f"namespace '{ns_lower}' is a privileged system namespace -> +2"
-        )
+        reasons.append(f"namespace '{ns_lower}' is a privileged system namespace -> +2")
 
     # ── 3. Resource sensitivity ──────────────────────────────────────────
     if resource_lower in SENSITIVE_RESOURCES:
@@ -180,8 +195,10 @@ def score(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 class _ScoreBucket:
     """Mutable integer bucket so helpers can accumulate a sub-score."""
+
     def __init__(self, initial: int = 0) -> None:
         self.value = initial
 
@@ -201,9 +218,7 @@ def _score_params(
         val = params.get(field)
         if val is True:
             bucket.value += pts
-            reasons.append(
-                f"params.{field}=true grants host-level access -> +{pts}"
-            )
+            reasons.append(f"params.{field}=true grants host-level access -> +{pts}")
 
     # ── Image trust check ─────────────────────────────────────────────────
     image: str = str(params.get("image", "")).strip()

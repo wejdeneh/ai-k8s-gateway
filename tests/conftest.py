@@ -26,28 +26,29 @@ from jose import jwt
 # Ensure the test process uses a predictable secret and OPA URL.
 # Set these BEFORE importing app modules so Settings picks them up.
 # ---------------------------------------------------------------------------
-os.environ.setdefault("JWT_SECRET",        "test-secret-not-for-production")
-os.environ.setdefault("OPA_URL",           "http://mock-opa:8181")
-os.environ.setdefault("AUDIT_LOG_PATH",    "/tmp/test-audit.log")
-os.environ.setdefault("K8S_IN_CLUSTER",    "false")
+os.environ.setdefault("JWT_SECRET", "test-secret-not-for-production")
+os.environ.setdefault("OPA_URL", "http://mock-opa:8181")
+os.environ.setdefault("AUDIT_LOG_PATH", "/tmp/test-audit.log")
+os.environ.setdefault("K8S_IN_CLUSTER", "false")
 
-from app.main import app                          # noqa: E402
-from app.config import settings                   # noqa: E402
-from app.auth.jwt_handler import AGENT_IDENTITIES # noqa: E402
+from app.main import app  # noqa: E402
+from app.config import settings  # noqa: E402
+from app.auth.jwt_handler import AGENT_IDENTITIES  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
 # JWT fixtures
 # ---------------------------------------------------------------------------
 
+
 def _mint(agent_id: str, ttl_minutes: int = 15) -> str:
     identity = AGENT_IDENTITIES[agent_id]
     now = datetime.now(timezone.utc)
     payload = {
-        "sub":  identity["sub"],
+        "sub": identity["sub"],
         "role": identity["role"],
-        "iat":  now,
-        "exp":  now + timedelta(minutes=ttl_minutes),
+        "iat": now,
+        "exp": now + timedelta(minutes=ttl_minutes),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
@@ -74,6 +75,7 @@ def expired_token() -> str:
 # OPA response fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def opa_allow_response() -> dict:
     return {"result": {"allow": True, "reason": "Allowed by policy."}}
@@ -88,6 +90,7 @@ def opa_deny_response() -> dict:
 # TestClient fixtures  (OPA mocked — no sidecar needed for unit tests)
 # ---------------------------------------------------------------------------
 
+
 def _make_client_generator(opa_response: dict):
     """
     Create a FastAPI TestClient generator with the OPA HTTP call and Kubernetes API execution patched.
@@ -101,8 +104,8 @@ def _make_client_generator(opa_response: dict):
 
     mock_http = AsyncMock()
     mock_http.__aenter__ = AsyncMock(return_value=mock_http)
-    mock_http.__aexit__  = AsyncMock(return_value=False)
-    mock_http.post       = AsyncMock(return_value=mock_resp)
+    mock_http.__aexit__ = AsyncMock(return_value=False)
+    mock_http.post = AsyncMock(return_value=mock_resp)
 
     mock_execute_action = MagicMock(return_value={"mocked": True})
 
@@ -128,6 +131,7 @@ def deny_client(opa_deny_response: dict):
 # ---------------------------------------------------------------------------
 # Helper: authorization header
 # ---------------------------------------------------------------------------
+
 
 def auth(token: str) -> dict[str, str]:
     """Return an Authorization header dict for use in test requests."""

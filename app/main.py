@@ -51,6 +51,7 @@ from app.risk.scorer import score as compute_risk
 # Logging
 # ---------------------------------------------------------------------------
 from app.audit.structured_logger import setup_structured_logging
+
 setup_structured_logging(logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -67,8 +68,8 @@ app = FastAPI(
     ),
     version="1.0.0",
     contact={
-        "name":  "Portfolio project",
-        "url":   "https://github.com/your-handle/ai-k8s-gateway",
+        "name": "Portfolio project",
+        "url": "https://github.com/your-handle/ai-k8s-gateway",
     },
     license_info={"name": "MIT"},
 )
@@ -79,33 +80,38 @@ security = HTTPBearer()
 # Pydantic models
 # ---------------------------------------------------------------------------
 
+
 class AgentActionRequest(BaseModel):
     """Body accepted by POST /agent-action."""
-    action:    str                    # Kubernetes verb: get, list, create, …
-    resource:  str                    # Resource kind:   pods, deployments, …
+
+    action: str  # Kubernetes verb: get, list, create, …
+    resource: str  # Resource kind:   pods, deployments, …
     namespace: str = "default"
-    params:    dict[str, Any] = {}    # Extra args forwarded to the k8s SDK
+    params: dict[str, Any] = {}  # Extra args forwarded to the k8s SDK
 
 
 class AgentActionResponse(BaseModel):
     """Body returned by POST /agent-action on non-403 outcomes."""
+
     request_id: str
-    decision:   str           # "allow" | "deny" | "pending-approval"
+    decision: str  # "allow" | "deny" | "pending-approval"
     risk_level: str
     risk_score: int
-    message:    str
-    data:       Optional[Any] = None
+    message: str
+    data: Optional[Any] = None
 
 
 class ApproveRequest(BaseModel):
     """Body accepted by POST /approve/{id}."""
+
     approved: bool
-    reason:   Optional[str] = None   # optional human comment for the audit log
+    reason: Optional[str] = None  # optional human comment for the audit log
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 async def _query_opa(
     *,
@@ -132,14 +138,14 @@ async def _query_opa(
     """
     opa_input = {
         "input": {
-            "identity":   identity,
-            "role":       role,
-            "action":     action.lower(),
-            "resource":   resource.lower(),
-            "namespace":  namespace.lower(),
+            "identity": identity,
+            "role": role,
+            "action": action.lower(),
+            "resource": resource.lower(),
+            "namespace": namespace.lower(),
             "risk_level": risk_level,
             # v2: full params dict so OPA can inspect image, privileged, etc.
-            "params":     params,
+            "params": params,
         }
     }
 
@@ -153,7 +159,7 @@ async def _query_opa(
             result: dict = resp.json().get("result", {})
 
             allowed = bool(result.get("allow", False))
-            reason  = str(result.get("reason", "OPA decision (no reason provided)"))
+            reason = str(result.get("reason", "OPA decision (no reason provided)"))
             logger.info("OPA decision: allow=%s  reason=%r", allowed, reason)
             return allowed, reason
 
@@ -183,7 +189,8 @@ async def _execute_k8s(
     except K8sUnavailableError as exc:
         logger.warning(
             "⚠  Cluster unreachable — returning SIMULATED response.  "
-            "Run `bash demo/setup.sh` to fix this.  Error: %s", exc
+            "Run `bash demo/setup.sh` to fix this.  Error: %s",
+            exc,
         )
         return {
             "status": "[SIMULATED — cluster unreachable]",
@@ -193,10 +200,10 @@ async def _execute_k8s(
                 "Run `bash demo/setup.sh` to provision a local kind cluster."
             ),
             "would_have_executed": {
-                "action":    action,
-                "resource":  resource,
+                "action": action,
+                "resource": resource,
                 "namespace": namespace,
-                "params":    params,
+                "params": params,
             },
         }
 
@@ -210,6 +217,7 @@ async def _execute_k8s(
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @app.post(
     "/agent-action",
@@ -233,11 +241,16 @@ async def agent_action(
     # ── Stage 1: JWT authentication ───────────────────────────────────────
     token_payload = verify_token(credentials)
     identity = token_payload["sub"]
-    role     = token_payload["role"]
+    role = token_payload["role"]
 
     logger.info(
         "[%s] agent=%s role=%s  action=%s resource=%s ns=%s",
-        request_id, identity, role, body.action, body.resource, body.namespace,
+        request_id,
+        identity,
+        role,
+        body.action,
+        body.resource,
+        body.namespace,
     )
 
     # ── Stage 2: Risk scoring ─────────────────────────────────────────────
@@ -261,19 +274,24 @@ async def agent_action(
     if not allowed:
         audit.log(
             request_id=request_id,
-            identity=identity, role=role,
-            action=body.action, resource=body.resource, namespace=body.namespace,
+            identity=identity,
+            role=role,
+            action=body.action,
+            resource=body.resource,
+            namespace=body.namespace,
             params=body.params,
-            risk_level=rs.level, risk_score=rs.score,
+            risk_level=rs.level,
+            risk_score=rs.score,
             risk_reasons=list(rs.reasons),
-            decision="deny", opa_reason=opa_reason,
+            decision="deny",
+            opa_reason=opa_reason,
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "request_id": request_id,
-                "decision":   "deny",
-                "reason":     opa_reason,
+                "decision": "deny",
+                "reason": opa_reason,
                 "risk_level": rs.level,
             },
         )
@@ -282,22 +300,31 @@ async def agent_action(
     if rs.level == "high":
         pending = PendingRequest(
             request_id=request_id,
-            identity=identity, role=role,
-            action=body.action, resource=body.resource, namespace=body.namespace,
+            identity=identity,
+            role=role,
+            action=body.action,
+            resource=body.resource,
+            namespace=body.namespace,
             params=body.params,
-            risk_level=rs.level, risk_score=rs.score,
+            risk_level=rs.level,
+            risk_score=rs.score,
             risk_reasons=list(rs.reasons),
         )
         approval_queue.enqueue(pending)
 
         audit.log(
             request_id=request_id,
-            identity=identity, role=role,
-            action=body.action, resource=body.resource, namespace=body.namespace,
+            identity=identity,
+            role=role,
+            action=body.action,
+            resource=body.resource,
+            namespace=body.namespace,
             params=body.params,
-            risk_level=rs.level, risk_score=rs.score,
+            risk_level=rs.level,
+            risk_score=rs.score,
             risk_reasons=list(rs.reasons),
-            decision="pending-approval", opa_reason=opa_reason,
+            decision="pending-approval",
+            opa_reason=opa_reason,
         )
 
         logger.info("[%s] High-risk action queued for human approval", request_id)
@@ -320,12 +347,17 @@ async def agent_action(
 
     audit.log(
         request_id=request_id,
-        identity=identity, role=role,
-        action=body.action, resource=body.resource, namespace=body.namespace,
+        identity=identity,
+        role=role,
+        action=body.action,
+        resource=body.resource,
+        namespace=body.namespace,
         params=body.params,
-        risk_level=rs.level, risk_score=rs.score,
+        risk_level=rs.level,
+        risk_score=rs.score,
         risk_reasons=list(rs.reasons),
-        decision="allow", opa_reason=opa_reason,
+        decision="allow",
+        opa_reason=opa_reason,
     )
 
     return AgentActionResponse(
@@ -380,7 +412,7 @@ async def approve_action(
     pending entry and the final human decision.
     """
     token_payload = verify_token(credentials)
-    approver      = token_payload["sub"]
+    approver = token_payload["sub"]
 
     pending = approval_queue.resolve(request_id)
     if pending is None:
@@ -397,22 +429,25 @@ async def approve_action(
             pending.action, pending.resource, pending.namespace, pending.params
         )
         final_decision = "human-allow"
-        message        = f"Approved by {approver!r} and executed on Kubernetes."
+        message = f"Approved by {approver!r} and executed on Kubernetes."
     else:
-        k8s_result     = None
+        k8s_result = None
         final_decision = "human-deny"
-        message        = (
-            f"Denied by {approver!r}. "
-            f"Reason: {body.reason or 'no reason provided'}"
+        message = (
+            f"Denied by {approver!r}. Reason: {body.reason or 'no reason provided'}"
         )
 
     # Second audit record — captures the human decision.
     audit.log(
         request_id=request_id,
-        identity=pending.identity, role=pending.role,
-        action=pending.action, resource=pending.resource,
-        namespace=pending.namespace, params=pending.params,
-        risk_level=pending.risk_level, risk_score=pending.risk_score,
+        identity=pending.identity,
+        role=pending.role,
+        action=pending.action,
+        resource=pending.resource,
+        namespace=pending.namespace,
+        params=pending.params,
+        risk_level=pending.risk_level,
+        risk_score=pending.risk_score,
         risk_reasons=pending.risk_reasons,
         decision=final_decision,
         opa_reason=(
@@ -421,16 +456,14 @@ async def approve_action(
         ),
     )
 
-    logger.info(
-        "[%s] Human resolution: %s by %s", request_id, final_decision, approver
-    )
+    logger.info("[%s] Human resolution: %s by %s", request_id, final_decision, approver)
 
     return {
         "request_id": request_id,
-        "decision":   final_decision,
-        "approver":   approver,
-        "message":    message,
-        "data":       k8s_result,
+        "decision": final_decision,
+        "approver": approver,
+        "message": message,
+        "data": k8s_result,
     }
 
 

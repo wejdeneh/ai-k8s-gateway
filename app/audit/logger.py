@@ -54,7 +54,7 @@ def log(
     risk_level: str,
     risk_score: int,
     risk_reasons: list[str],
-    decision: str,                     # allow / deny / pending-approval / …
+    decision: str,  # allow / deny / pending-approval / …
     opa_reason: Optional[str] = None,
     error: Optional[str] = None,
 ) -> None:
@@ -66,20 +66,20 @@ def log(
     would abort the request pipeline.
     """
     record: dict[str, Any] = {
-        "timestamp":    datetime.now(timezone.utc).isoformat(),
-        "request_id":   request_id,
-        "identity":     identity,
-        "role":         role,
-        "action":       action,
-        "resource":     resource,
-        "namespace":    namespace,
-        "params":       params,
-        "risk_level":   risk_level,
-        "risk_score":   risk_score,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "request_id": request_id,
+        "identity": identity,
+        "role": role,
+        "action": action,
+        "resource": resource,
+        "namespace": namespace,
+        "params": params,
+        "risk_level": risk_level,
+        "risk_score": risk_score,
         "risk_reasons": risk_reasons,
-        "decision":     decision,
-        "opa_reason":   opa_reason,
-        "error":        error,
+        "decision": decision,
+        "opa_reason": opa_reason,
+        "error": error,
     }
 
     # json.dumps with default=str handles any non-serialisable values (e.g.
@@ -95,6 +95,7 @@ def log(
     except OSError as exc:
         # Deliberately swallowed — logging must never block a request.
         import sys
+
         print(
             f"[AUDIT WARNING] Failed to write audit record for "
             f"request_id={request_id!r}: {exc}",

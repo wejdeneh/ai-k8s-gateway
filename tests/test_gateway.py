@@ -16,19 +16,17 @@ Test coverage:
 
 from __future__ import annotations
 
-import json
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
-os.environ.setdefault("JWT_SECRET",     "test-secret-not-for-production")
-os.environ.setdefault("OPA_URL",        "http://mock-opa:8181")
+os.environ.setdefault("JWT_SECRET", "test-secret-not-for-production")
+os.environ.setdefault("OPA_URL", "http://mock-opa:8181")
 os.environ.setdefault("AUDIT_LOG_PATH", "/tmp/test-gateway-audit.log")
 os.environ.setdefault("K8S_IN_CLUSTER", "false")
 
-from app.main import app                  # noqa: E402
+from app.main import app  # noqa: E402
 from app.auth.jwt_handler import create_token  # noqa: E402
 
 
@@ -36,11 +34,13 @@ from app.auth.jwt_handler import create_token  # noqa: E402
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 class PatchedTestClient:
     """
     Wrapper around TestClient that ensures HTTP and Kubernetes API patches
     are active during the execution of requests.
     """
+
     def __init__(self, allow: bool, reason: str | None = None) -> None:
         self.allow = allow
         self.reason = reason
@@ -51,8 +51,9 @@ class PatchedTestClient:
 
         opa_resp_data = {
             "result": {
-                "allow":  self.allow,
-                "reason": self.reason or ("Allowed by policy." if self.allow else "Denied: test."),
+                "allow": self.allow,
+                "reason": self.reason
+                or ("Allowed by policy." if self.allow else "Denied: test."),
             }
         }
 
@@ -63,8 +64,8 @@ class PatchedTestClient:
 
         mock_http_client = AsyncMock()
         mock_http_client.__aenter__ = AsyncMock(return_value=mock_http_client)
-        mock_http_client.__aexit__  = AsyncMock(return_value=False)
-        mock_http_client.post       = AsyncMock(return_value=mock_opa_response)
+        mock_http_client.__aexit__ = AsyncMock(return_value=False)
+        mock_http_client.post = AsyncMock(return_value=mock_opa_response)
 
         mock_execute_action = MagicMock(return_value={"mocked": True})
 
@@ -105,6 +106,7 @@ def _deploy_token() -> str:
 # Health check
 # ---------------------------------------------------------------------------
 
+
 class TestHealth:
     def test_health_returns_200(self) -> None:
         client = TestClient(app, raise_server_exceptions=False)
@@ -118,43 +120,64 @@ class TestHealth:
 # Authentication
 # ---------------------------------------------------------------------------
 
+
 class TestAuthentication:
     """JWT auth checks on /agent-action."""
 
     def test_missing_authorization_header_returns_401(self) -> None:
         client = _make_client_with_opa(allow=True)
-        resp = client.post("/agent-action", json={
-            "action": "list", "resource": "pods",
-            "namespace": "default", "params": {}
-        })
+        resp = client.post(
+            "/agent-action",
+            json={
+                "action": "list",
+                "resource": "pods",
+                "namespace": "default",
+                "params": {},
+            },
+        )
         assert resp.status_code == 401
 
     def test_malformed_bearer_token_returns_401(self) -> None:
         client = _make_client_with_opa(allow=True)
-        resp = client.post("/agent-action",
+        resp = client.post(
+            "/agent-action",
             headers={"Authorization": "Bearer not.a.valid.jwt"},
-            json={"action": "list", "resource": "pods",
-                  "namespace": "default", "params": {}},
+            json={
+                "action": "list",
+                "resource": "pods",
+                "namespace": "default",
+                "params": {},
+            },
         )
         assert resp.status_code == 401
 
     def test_missing_bearer_prefix_returns_401(self) -> None:
         token = _readonly_token()
         client = _make_client_with_opa(allow=True)
-        resp = client.post("/agent-action",
-            headers={"Authorization": token},   # no "Bearer " prefix
-            json={"action": "list", "resource": "pods",
-                  "namespace": "default", "params": {}},
+        resp = client.post(
+            "/agent-action",
+            headers={"Authorization": token},  # no "Bearer " prefix
+            json={
+                "action": "list",
+                "resource": "pods",
+                "namespace": "default",
+                "params": {},
+            },
         )
         assert resp.status_code == 401
 
     def test_valid_token_is_accepted(self) -> None:
         token = _readonly_token()
         client = _make_client_with_opa(allow=True)
-        resp = client.post("/agent-action",
+        resp = client.post(
+            "/agent-action",
             headers=_auth(token),
-            json={"action": "list", "resource": "pods",
-                  "namespace": "default", "params": {}},
+            json={
+                "action": "list",
+                "resource": "pods",
+                "namespace": "default",
+                "params": {},
+            },
         )
         # Should not be 401 (OPA allows, K8s mocked)
         assert resp.status_code != 401
@@ -164,36 +187,52 @@ class TestAuthentication:
 # OPA policy enforcement
 # ---------------------------------------------------------------------------
 
+
 class TestPolicyEnforcement:
     """OPA allow/deny decisions flow through correctly."""
 
     def test_opa_allow_returns_2xx(self) -> None:
         token = _deploy_token()
         client = _make_client_with_opa(allow=True)
-        resp = client.post("/agent-action",
+        resp = client.post(
+            "/agent-action",
             headers=_auth(token),
-            json={"action": "list", "resource": "pods",
-                  "namespace": "default", "params": {}},
+            json={
+                "action": "list",
+                "resource": "pods",
+                "namespace": "default",
+                "params": {},
+            },
         )
         assert resp.status_code in (200, 202)
 
     def test_opa_deny_returns_403(self) -> None:
         token = _deploy_token()
         client = _make_client_with_opa(allow=False, reason="Denied: test denial.")
-        resp = client.post("/agent-action",
+        resp = client.post(
+            "/agent-action",
             headers=_auth(token),
-            json={"action": "delete", "resource": "pods",
-                  "namespace": "kube-system", "params": {}},
+            json={
+                "action": "delete",
+                "resource": "pods",
+                "namespace": "kube-system",
+                "params": {},
+            },
         )
         assert resp.status_code == 403
 
     def test_denied_response_includes_reason(self) -> None:
         token = _deploy_token()
         client = _make_client_with_opa(allow=False, reason="test reason string")
-        resp = client.post("/agent-action",
+        resp = client.post(
+            "/agent-action",
             headers=_auth(token),
-            json={"action": "delete", "resource": "pods",
-                  "namespace": "default", "params": {}},
+            json={
+                "action": "delete",
+                "resource": "pods",
+                "namespace": "default",
+                "params": {},
+            },
         )
         assert resp.status_code == 403
         body = resp.json()
@@ -202,10 +241,15 @@ class TestPolicyEnforcement:
     def test_response_includes_risk_level(self) -> None:
         token = _readonly_token()
         client = _make_client_with_opa(allow=True)
-        resp = client.post("/agent-action",
+        resp = client.post(
+            "/agent-action",
             headers=_auth(token),
-            json={"action": "list", "resource": "pods",
-                  "namespace": "default", "params": {}},
+            json={
+                "action": "list",
+                "resource": "pods",
+                "namespace": "default",
+                "params": {},
+            },
         )
         body = resp.json()
         assert "risk_level" in body or "risk_level" in str(body)
@@ -215,13 +259,15 @@ class TestPolicyEnforcement:
 # Request body validation
 # ---------------------------------------------------------------------------
 
+
 class TestRequestValidation:
     """FastAPI should reject malformed request bodies."""
 
     def test_missing_action_returns_422(self) -> None:
         token = _readonly_token()
         client = _make_client_with_opa(allow=True)
-        resp = client.post("/agent-action",
+        resp = client.post(
+            "/agent-action",
             headers=_auth(token),
             json={"resource": "pods", "namespace": "default", "params": {}},
         )
@@ -230,7 +276,8 @@ class TestRequestValidation:
     def test_missing_resource_returns_422(self) -> None:
         token = _readonly_token()
         client = _make_client_with_opa(allow=True)
-        resp = client.post("/agent-action",
+        resp = client.post(
+            "/agent-action",
             headers=_auth(token),
             json={"action": "list", "namespace": "default", "params": {}},
         )
@@ -239,7 +286,8 @@ class TestRequestValidation:
     def test_empty_body_returns_422(self) -> None:
         token = _readonly_token()
         client = _make_client_with_opa(allow=True)
-        resp = client.post("/agent-action",
+        resp = client.post(
+            "/agent-action",
             headers=_auth(token),
             json={},
         )
@@ -249,6 +297,7 @@ class TestRequestValidation:
 # ---------------------------------------------------------------------------
 # Content-aware policy (v2: params inspection)
 # ---------------------------------------------------------------------------
+
 
 class TestContentAwarePolicy:
     """
@@ -266,13 +315,14 @@ class TestContentAwarePolicy:
     def test_privileged_container_opa_deny_returns_403(self) -> None:
         token = _deploy_token()
         client = _make_client_with_opa(
-            allow=False,
-            reason="params.privileged=true grants full container escape"
+            allow=False, reason="params.privileged=true grants full container escape"
         )
-        resp = client.post("/agent-action",
+        resp = client.post(
+            "/agent-action",
             headers=_auth(token),
             json={
-                "action": "create", "resource": "deployments",
+                "action": "create",
+                "resource": "deployments",
                 "namespace": "demo",
                 "params": {"name": "evil", "image": "nginx:alpine", "privileged": True},
             },
@@ -283,12 +333,14 @@ class TestContentAwarePolicy:
         token = _deploy_token()
         client = _make_client_with_opa(
             allow=False,
-            reason="image 'cryptominer:latest' is not from a trusted registry"
+            reason="image 'cryptominer:latest' is not from a trusted registry",
         )
-        resp = client.post("/agent-action",
+        resp = client.post(
+            "/agent-action",
             headers=_auth(token),
             json={
-                "action": "create", "resource": "deployments",
+                "action": "create",
+                "resource": "deployments",
                 "namespace": "demo",
                 "params": {"name": "miner", "image": "cryptominer:latest"},
             },
@@ -299,6 +351,7 @@ class TestContentAwarePolicy:
 # ---------------------------------------------------------------------------
 # Approval queue endpoints
 # ---------------------------------------------------------------------------
+
 
 class TestApprovalQueue:
     """/pending and /approve/{id} endpoints."""

@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 # Custom exceptions
 # ---------------------------------------------------------------------------
 
+
 class K8sUnavailableError(Exception):
     """
     Raised when no Kubernetes cluster configuration can be found.
@@ -61,6 +62,7 @@ class K8sActionError(Exception):
 # ---------------------------------------------------------------------------
 # Config loading
 # ---------------------------------------------------------------------------
+
 
 def _load_config() -> None:
     """
@@ -97,6 +99,7 @@ def _load_config() -> None:
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def execute_action(
     action: str,
     resource: str,
@@ -123,13 +126,16 @@ def execute_action(
     """
     _load_config()
 
-    action_lower    = action.lower().strip()
-    resource_lower  = resource.lower().strip()
+    action_lower = action.lower().strip()
+    resource_lower = resource.lower().strip()
     namespace_clean = namespace.strip() or "default"
 
     logger.info(
         "Executing k8s action: %s %s/%s  params=%s",
-        action_lower, namespace_clean, resource_lower, params,
+        action_lower,
+        namespace_clean,
+        resource_lower,
+        params,
     )
 
     try:
@@ -147,6 +153,7 @@ def execute_action(
 # Internal dispatch
 # ---------------------------------------------------------------------------
 
+
 def _dispatch(
     action: str,
     resource: str,
@@ -162,7 +169,7 @@ def _dispatch(
     Raises:
         ValueError: For unsupported (action, resource) combinations.
     """
-    v1   = client.CoreV1Api()
+    v1 = client.CoreV1Api()
     apps = client.AppsV1Api()
 
     # ── Pods ──────────────────────────────────────────────────────────────
@@ -170,17 +177,16 @@ def _dispatch(
         if action == "list":
             resp = v1.list_namespaced_pod(namespace=namespace)
             return [
-                {"name": p.metadata.name, "phase": p.status.phase}
-                for p in resp.items
+                {"name": p.metadata.name, "phase": p.status.phase} for p in resp.items
             ]
         if action == "get":
             name = _require_param(params, "name", action, resource)
             resp = v1.read_namespaced_pod(name=name, namespace=namespace)
             return {
-                "name":      resp.metadata.name,
+                "name": resp.metadata.name,
                 "namespace": resp.metadata.namespace,
-                "phase":     resp.status.phase,
-                "node":      resp.spec.node_name,
+                "phase": resp.status.phase,
+                "node": resp.spec.node_name,
             }
         if action == "delete":
             name = _require_param(params, "name", action, resource)
@@ -193,9 +199,9 @@ def _dispatch(
             resp = apps.list_namespaced_deployment(namespace=namespace)
             return [
                 {
-                    "name":     d.metadata.name,
+                    "name": d.metadata.name,
                     "replicas": d.spec.replicas,
-                    "ready":    d.status.ready_replicas or 0,
+                    "ready": d.status.ready_replicas or 0,
                 }
                 for d in resp.items
             ]
@@ -203,18 +209,18 @@ def _dispatch(
             name = _require_param(params, "name", action, resource)
             resp = apps.read_namespaced_deployment(name=name, namespace=namespace)
             return {
-                "name":     resp.metadata.name,
+                "name": resp.metadata.name,
                 "replicas": resp.spec.replicas,
-                "ready":    resp.status.ready_replicas or 0,
-                "image":    resp.spec.template.spec.containers[0].image,
+                "ready": resp.status.ready_replicas or 0,
+                "image": resp.spec.template.spec.containers[0].image,
             }
         if action == "create":
             body = _build_deployment(params)
             resp = apps.create_namespaced_deployment(namespace=namespace, body=body)
             return {
-                "name":      resp.metadata.name,
+                "name": resp.metadata.name,
                 "namespace": resp.metadata.namespace,
-                "uid":       resp.metadata.uid,
+                "uid": resp.metadata.uid,
             }
         if action in ("update", "patch"):
             name = _require_param(params, "name", action, resource)
@@ -257,9 +263,8 @@ def _dispatch(
 # Builder helpers
 # ---------------------------------------------------------------------------
 
-def _require_param(
-    params: dict[str, Any], key: str, action: str, resource: str
-) -> str:
+
+def _require_param(params: dict[str, Any], key: str, action: str, resource: str) -> str:
     """
     Extract a required parameter from the params dict.
 
@@ -294,18 +299,18 @@ def _build_deployment(params: dict[str, Any]) -> client.V1Deployment:
       memory_request  Memory request (default: "64Mi").
       memory_limit    Memory limit   (default: "128Mi").
     """
-    name        = params.get("name", "gateway-managed-app")
-    image       = params.get("image", "nginx:alpine")
-    replicas    = int(params.get("replicas", 1))
-    port        = int(params.get("container_port", 80))
-    cpu_req     = params.get("cpu_request",    "50m")
-    cpu_lim     = params.get("cpu_limit",      "200m")
-    mem_req     = params.get("memory_request", "64Mi")
-    mem_lim     = params.get("memory_limit",   "128Mi")
+    name = params.get("name", "gateway-managed-app")
+    image = params.get("image", "nginx:alpine")
+    replicas = int(params.get("replicas", 1))
+    port = int(params.get("container_port", 80))
+    cpu_req = params.get("cpu_request", "50m")
+    cpu_lim = params.get("cpu_limit", "200m")
+    mem_req = params.get("memory_request", "64Mi")
+    mem_lim = params.get("memory_limit", "128Mi")
 
     resources = client.V1ResourceRequirements(
         requests={"cpu": cpu_req, "memory": mem_req},
-        limits  ={"cpu": cpu_lim, "memory": mem_lim},
+        limits={"cpu": cpu_lim, "memory": mem_lim},
     )
 
     return client.V1Deployment(
@@ -326,7 +331,7 @@ def _build_deployment(params: dict[str, Any]) -> client.V1Deployment:
                     # Pod-level security: run as non-root by default.
                     security_context=client.V1PodSecurityContext(
                         run_as_non_root=True,
-                        run_as_user=65534,   # nobody
+                        run_as_user=65534,  # nobody
                     ),
                     containers=[
                         client.V1Container(
@@ -345,4 +350,3 @@ def _build_deployment(params: dict[str, Any]) -> client.V1Deployment:
             ),
         ),
     )
-

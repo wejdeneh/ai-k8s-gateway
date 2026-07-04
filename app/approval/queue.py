@@ -30,7 +30,6 @@ because these operations are all O(1) and complete without blocking I/O.
 """
 
 import threading
-import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -57,32 +56,32 @@ class PendingRequest:
         risk_score: int,
         risk_reasons: list[str],
     ) -> None:
-        self.request_id   = request_id
-        self.identity     = identity
-        self.role         = role
-        self.action       = action
-        self.resource     = resource
-        self.namespace    = namespace
-        self.params       = params
-        self.risk_level   = risk_level
-        self.risk_score   = risk_score
+        self.request_id = request_id
+        self.identity = identity
+        self.role = role
+        self.action = action
+        self.resource = resource
+        self.namespace = namespace
+        self.params = params
+        self.risk_level = risk_level
+        self.risk_score = risk_score
         self.risk_reasons = risk_reasons
-        self.queued_at    = datetime.now(timezone.utc).isoformat()
+        self.queued_at = datetime.now(timezone.utc).isoformat()
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a plain dict for JSON responses."""
         return {
-            "request_id":   self.request_id,
-            "identity":     self.identity,
-            "role":         self.role,
-            "action":       self.action,
-            "resource":     self.resource,
-            "namespace":    self.namespace,
-            "params":       self.params,
-            "risk_level":   self.risk_level,
-            "risk_score":   self.risk_score,
+            "request_id": self.request_id,
+            "identity": self.identity,
+            "role": self.role,
+            "action": self.action,
+            "resource": self.resource,
+            "namespace": self.namespace,
+            "params": self.params,
+            "risk_level": self.risk_level,
+            "risk_score": self.risk_score,
             "risk_reasons": self.risk_reasons,
-            "queued_at":    self.queued_at,
+            "queued_at": self.queued_at,
         }
 
 
@@ -92,7 +91,7 @@ class ApprovalQueue:
     def __init__(self) -> None:
         # dict[request_id → PendingRequest]
         self._queue: dict[str, PendingRequest] = {}
-        self._lock  = threading.Lock()
+        self._lock = threading.Lock()
 
     # ── Public API ────────────────────────────────────────────────────────
 

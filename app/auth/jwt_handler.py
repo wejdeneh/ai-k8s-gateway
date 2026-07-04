@@ -46,7 +46,7 @@ if settings.k8s_in_cluster and settings.jwt_secret == "dev-secret-change-in-prod
 # ---------------------------------------------------------------------------
 AGENT_IDENTITIES: dict[str, dict[str, str]] = {
     "agent-readonly": {"role": "readonly", "sub": "agent-readonly"},
-    "agent-deploy":   {"role": "deployer",  "sub": "agent-deploy"},
+    "agent-deploy": {"role": "deployer", "sub": "agent-deploy"},
 }
 
 
@@ -73,11 +73,11 @@ def create_token(agent_id: str) -> str:
     now = datetime.now(timezone.utc)
 
     payload = {
-        "sub":  identity["sub"],           # subject — stable agent identifier
-        "role": identity["role"],           # used by OPA for authz decisions
-        "jti":  str(uuid.uuid4()),          # unique token ID (for revocation)
-        "iat":  now,                        # issued-at
-        "exp":  now + timedelta(minutes=settings.jwt_ttl_minutes),
+        "sub": identity["sub"],  # subject — stable agent identifier
+        "role": identity["role"],  # used by OPA for authz decisions
+        "jti": str(uuid.uuid4()),  # unique token ID (for revocation)
+        "iat": now,  # issued-at
+        "exp": now + timedelta(minutes=settings.jwt_ttl_minutes),
     }
 
     return jwt.encode(

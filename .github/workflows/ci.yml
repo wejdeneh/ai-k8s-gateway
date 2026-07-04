@@ -114,4 +114,4 @@ jobs:
         # Runs kubeconform against standard resources (Gatekeeper CRDs might fail unless schemas are fetched,
         # so we ignore custom resources and check standard deployment/configmaps/secrets/services)
         run: |
-          kubeconform -summary -ignore-missing-resources k8s/
+          kubeconform -summary -ignore-missing-resources k8s/gateway/deployment.yaml

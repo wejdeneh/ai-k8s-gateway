@@ -67,8 +67,8 @@ def main() -> None:
             "  curl -X POST http://localhost:8000/agent-action \\\n"
             '       -H "Authorization: Bearer <token>" \\\n'
             "       -H 'Content-Type: application/json' \\\n"
-            "       -d '{\"action\": \"list\", \"resource\": \"pods\","
-            " \"namespace\": \"default\", \"params\": {}}'"
+            '       -d \'{"action": "list", "resource": "pods",'
+            ' "namespace": "default", "params": {}}\''
         )
 
 

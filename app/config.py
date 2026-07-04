@@ -43,13 +43,13 @@ class Settings(BaseSettings):
     # triggers an OPA deny_reason.  Override via env var as a comma-separated
     # string: TRUSTED_IMAGE_PREFIXES="gcr.io/myco/,quay.io/myco/"
     trusted_image_prefixes: list[str] = [
-        "nginx:",           # Docker Hub official
+        "nginx:",  # Docker Hub official
         "python:",
         "alpine:",
         "busybox:",
-        "gcr.io/",          # Google Container Registry
-        "quay.io/",         # Red Hat Quay
-        "registry.k8s.io/", # Kubernetes official images
+        "gcr.io/",  # Google Container Registry
+        "quay.io/",  # Red Hat Quay
+        "registry.k8s.io/",  # Kubernetes official images
     ]
 
     # Maximum replica count an agent may request via the gateway.

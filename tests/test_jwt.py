@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from jose import jwt, JWTError
+from jose import jwt
 
 from app.auth.jwt_handler import (
     AGENT_IDENTITIES,
@@ -79,10 +79,11 @@ class TestCreateToken:
         self, agent_id: str
     ) -> None:
         from types import SimpleNamespace
+
         token = create_token(agent_id)
         creds = SimpleNamespace(credentials=token)
         payload = verify_token(creds)
-        assert payload["sub"]  == AGENT_IDENTITIES[agent_id]["sub"]
+        assert payload["sub"] == AGENT_IDENTITIES[agent_id]["sub"]
         assert payload["role"] == AGENT_IDENTITIES[agent_id]["role"]
 
 
@@ -97,18 +98,19 @@ class TestVerifyToken:
     def _creds(token: str):
         """Wrap a token string in a minimal credentials-like object."""
         from types import SimpleNamespace
+
         return SimpleNamespace(credentials=token)
 
     def test_valid_token_returns_identity_and_role(self) -> None:
         token = create_token("agent-readonly")
         payload = verify_token(self._creds(token))
-        assert payload["sub"]  == "agent-readonly"
+        assert payload["sub"] == "agent-readonly"
         assert payload["role"] == "readonly"
 
     def test_deploy_token_returns_deployer_role(self) -> None:
         token = create_token("agent-deploy")
         payload = verify_token(self._creds(token))
-        assert payload["sub"]  == "agent-deploy"
+        assert payload["sub"] == "agent-deploy"
         assert payload["role"] == "deployer"
 
     def test_missing_bearer_prefix_raises(self) -> None:
@@ -134,22 +136,24 @@ class TestVerifyToken:
         """Tokens with exp in the past must be rejected."""
         now = datetime.now(timezone.utc)
         payload = {
-            "sub":  "agent-readonly",
+            "sub": "agent-readonly",
             "role": "readonly",
-            "iat":  now - timedelta(minutes=30),
-            "exp":  now - timedelta(minutes=15),   # expired!
+            "iat": now - timedelta(minutes=30),
+            "exp": now - timedelta(minutes=15),  # expired!
         }
-        token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+        token = jwt.encode(
+            payload, settings.jwt_secret, algorithm=settings.jwt_algorithm
+        )
         with pytest.raises(Exception):
             verify_token(self._creds(token))
 
     def test_wrong_secret_raises(self) -> None:
         """Token signed with a different secret must be rejected."""
         payload = {
-            "sub":  "agent-readonly",
+            "sub": "agent-readonly",
             "role": "readonly",
-            "iat":  datetime.now(timezone.utc),
-            "exp":  datetime.now(timezone.utc) + timedelta(minutes=15),
+            "iat": datetime.now(timezone.utc),
+            "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
         }
         bad_token = jwt.encode(payload, "wrong-secret-key", algorithm="HS256")
         with pytest.raises(Exception):
@@ -163,7 +167,8 @@ class TestVerifyToken:
             "iat": datetime.now(timezone.utc),
             "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
         }
-        token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+        token = jwt.encode(
+            payload, settings.jwt_secret, algorithm=settings.jwt_algorithm
+        )
         with pytest.raises(Exception):
             verify_token(self._creds(token))
-
