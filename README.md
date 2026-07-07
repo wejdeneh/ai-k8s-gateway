@@ -1,4 +1,4 @@
-# AI Agent Kubernetes Security Gateway
+# KubeShield-A AI Agent Kubernetes Security Gateway
 
 > **Portfolio project** — a production-pattern, defence-in-depth security gateway
 > that sits between an AI agent and a Kubernetes cluster, ensuring no action reaches
